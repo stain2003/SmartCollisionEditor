@@ -1,71 +1,79 @@
 # Smart Collision Editor
 
-An Unreal Engine 5.8.1 editor plugin for fitting simple collision to individual connected parts of a complex Static Mesh.
+An Unreal Engine 5.8.1 editor plugin for interactively fitting simple collision to selected geometry inside the native Static Mesh Editor.
 
-The first release is aimed at imported CAD/mechanical assemblies where manually positioning collision boxes for every rail, plate, pipe, and bracket is slow.
+> V2 is under development on `feature/interactive-selection-v2`. The stable V1 implementation remains on `main`.
 
-## What it does
+## V2 workflow
 
-- Reads LOD0 editor mesh data.
-- Splits the mesh into topologically connected vertex components.
-- Computes a PCA-aligned local frame for each component.
-- Generates one collision primitive per component:
-  - **Auto:** capsule for long, approximately round parts; oriented box otherwise.
-  - **Oriented Box:** PCA-aligned box for every part.
-  - **Capsule:** PCA-aligned capsule for every part.
-  - **Convex:** reduced convex point cloud for every part.
-- Filters tiny components such as screws and wires.
-- Supports collision padding.
-- Can replace existing simple collision or append to it.
-- Participates in Unreal Editor Undo/Redo.
-- Marks the Static Mesh asset dirty so the generated collision can be saved normally.
+1. Double-click a Static Mesh asset.
+2. Open the embedded **Smart Collision** tab in the Static Mesh Editor. If the saved layout hides it, click the **Smart Collision** toolbar button.
+3. Choose a selection mode:
+   - **Connected part** selects the complete edge-connected topology island under the cursor.
+   - **Surface / face** selects the connected, approximately coplanar surface under the cursor.
+4. Click **Start viewport picking**.
+5. Click geometry in the native viewport. **Shift** adds to the selection; **Ctrl** toggles it.
+6. Fit **Auto**, **Box**, **Capsule**, **Sphere**, or **Convex hull** around only the selected geometry.
+7. Leave **Replace all existing collision** disabled to build collision one selected region at a time.
+8. Inspect the standard simple collision overlay and save the Static Mesh asset.
 
-The generated collision is stored in the Static Mesh `UBodySetup::AggGeom`, so it remains standard Unreal simple collision and can be inspected with the normal Static Mesh Editor collision display.
+Selected triangles are outlined in orange. The generated shapes are stored in the mesh's standard `UBodySetup::AggGeom`, participate in Undo/Redo, and require no runtime module.
+
+## Collision fitting
+
+- **Auto** chooses a sphere for near-uniform bounds, a capsule for long round parts, and an oriented box otherwise.
+- **Box** uses a PCA-aligned oriented bounding box.
+- **Capsule** aligns its long axis to the selection's principal axis.
+- **Sphere** encloses all selected vertices.
+- **Convex hull** submits a reduced selected point cloud to Chaos cooking.
+- For a planar face selection, padding also supplies a small thickness so Box and Convex results remain volumetric.
 
 ## Installation
 
-1. Clone or download this repository.
-2. Create a `Plugins` directory beside your project's `.uproject` file if it does not exist.
-3. Copy this repository into:
+Clone the V2 branch directly:
 
-   ```text
-   YourProject/
-     Plugins/
-       SmartCollisionEditor/
-         SmartCollisionEditor.uplugin
-   ```
+```powershell
+git clone --branch feature/interactive-selection-v2 https://github.com/fuyutianji/SmartCollisionEditor.git
+```
 
-4. Right-click the `.uproject` file and regenerate project files if required.
-5. Open the project and allow Unreal to build the plugin.
-6. Enable **Smart Collision Editor** in **Edit > Plugins**.
-7. Restart the editor.
+Place the repository so the descriptor is at:
 
-A source build or an installed C++ toolchain compatible with Unreal Engine 5.8.1 is required.
+```text
+YourProject/
+  Plugins/
+    SmartCollisionEditor/
+      SmartCollisionEditor.uplugin
+      Source/
+```
 
-## Usage
+Then:
 
-1. Select one Static Mesh asset in the Content Browser.
-2. Open **Tools > Smart Collision Editor**.
-3. Click **Use Content Browser Selection**.
-4. Start with **Generate Auto (recommended)**.
-5. Review the result in the Static Mesh Editor with collision visibility enabled.
-6. Adjust padding or minimum part size and regenerate if necessary.
-7. Save the Static Mesh asset.
+1. Close Unreal Editor.
+2. Right-click the project's `.uproject` and regenerate project files if that command is available.
+3. Open the project and allow Unreal to build the plugin.
+4. Enable **Smart Collision Editor** under **Edit > Plugins** if necessary.
+5. Restart the editor, then open a Static Mesh asset.
 
-Recommended starting values for mechanical assemblies:
+A C++ toolchain compatible with Unreal Engine 5.8.1 is required.
 
-- Collision padding: `0.1` to `0.5` cm
-- Ignore parts smaller than: `1` to `3` cm
-- Convex vertices: `32` to `64`
+## Updating an existing checkout
 
-## Important behavior
+```powershell
+git fetch origin
+git switch feature/interactive-selection-v2
+git pull
+```
 
-- Component detection is based on shared mesh vertices. Two parts that merely touch but do not share vertices remain separate.
-- A welded CAD assembly may appear as one component; material-slot and viewport face selection are planned follow-up features.
-- Auto mode intentionally favors cheap boxes and capsules. Use Convex only for parts whose shape cannot be represented adequately by a primitive.
-- The tool caps output at 256 shapes per run to prevent accidental collision explosions.
-- Convex mode supplies a reduced point cloud to Chaos cooking. Always inspect convex results before using them for simulation.
-- This is an editor-only plugin. It does not add runtime code to packaged games.
+If the plugin was previously built, close Unreal and delete only the plugin's generated `Binaries` and `Intermediate` folders before rebuilding. Do not delete `Source` or the `.uplugin` file.
+
+## Selection details and current limits
+
+- Selection operates on render LOD0.
+- Connected-part detection uses shared quantized edges. Parts that only touch at a point normally remain separate.
+- Surface selection expands across shared edges whose triangle normals differ by no more than five degrees.
+- **Shift** can combine multiple parts or surfaces into one fitted collision shape.
+- The current preview outlines selected triangle edges; a translucent filled highlight is a possible follow-up.
+- Always inspect convex cooking before using the mesh for physics simulation.
 
 ## Source layout
 
@@ -78,19 +86,12 @@ Source/SmartCollisionEditor/
     SmartCollisionEditorModule.cpp
     SSmartCollisionPanel.h
     SSmartCollisionPanel.cpp
+    SmartCollisionSelectionTool.h
+    SmartCollisionSelectionTool.cpp
     SmartCollisionGenerator.h
     SmartCollisionGenerator.cpp
 ```
 
-## Roadmap
+## License and company policy
 
-- Material-slot filtering
-- Click-to-select connected parts in a preview viewport
-- Per-part include/exclude list
-- Collision fit-error heatmap
-- Negative-space protection for frames and hollow assemblies
-- Batch processing for multiple Static Mesh assets
-
-## License
-
-No license has been selected yet. Keep the repository private until you choose one and confirm that publishing the code is allowed by your organization.
+No license has been selected. Keep the repository private until you choose one and confirm that publishing or moving the code is allowed by your organization.
