@@ -4,7 +4,7 @@
 #include "IStaticMeshEditor.h"
 #include "InteractiveToolManager.h"
 #include "PrimitiveDrawInterface.h"
-#include "Rendering/StaticMeshRenderData.h"
+#include "StaticMeshResources.h"
 #include "Framework/Application/SlateApplication.h"
 #include "ToolContextInterfaces.h"
 
