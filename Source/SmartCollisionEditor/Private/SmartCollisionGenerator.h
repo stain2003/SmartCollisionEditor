@@ -9,6 +9,7 @@ enum class ESmartCollisionMode : uint8
     Automatic,
     OrientedBox,
     Capsule,
+    Sphere,
     Convex
 };
 
@@ -27,6 +28,7 @@ struct FSmartCollisionResult
     int32 NumComponents = 0;
     int32 NumBoxes = 0;
     int32 NumCapsules = 0;
+    int32 NumSpheres = 0;
     int32 NumConvex = 0;
     int32 NumSkipped = 0;
     FString Message;
@@ -37,6 +39,12 @@ class FSmartCollisionGenerator
 public:
     static FSmartCollisionResult Generate(
         UStaticMesh* StaticMesh,
+        ESmartCollisionMode Mode,
+        const FSmartCollisionSettings& Settings);
+
+    static FSmartCollisionResult GenerateFromPoints(
+        UStaticMesh* StaticMesh,
+        const TArray<FVector>& SelectedPoints,
         ESmartCollisionMode Mode,
         const FSmartCollisionSettings& Settings);
 };
