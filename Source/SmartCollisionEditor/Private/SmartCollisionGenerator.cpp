@@ -308,6 +308,24 @@ namespace SmartCollision
         BodySetup->AggGeom.SphylElems.Add(Capsule);
     }
 
+    static void AddSphere(
+        UBodySetup* BodySetup,
+        const FPart& Part,
+        float Padding)
+    {
+        FKSphereElem Sphere;
+        Sphere.Center = Part.Center;
+
+        double Radius = 0.0;
+        for (const FVector& Point : Part.Points)
+        {
+            Radius = FMath::Max(Radius, FVector::Distance(Point, Part.Center));
+        }
+
+        Sphere.Radius = FMath::Max(0.05, Radius + Padding);
+        BodySetup->AggGeom.SphereElems.Add(Sphere);
+    }
+
     static TArray<FVector> ReduceConvexPoints(const TArray<FVector>& Points, int32 MaxPoints)
     {
         if (Points.Num() <= MaxPoints)
@@ -391,6 +409,47 @@ namespace SmartCollision
         const bool bLong = Part.Extents.X >= CrossSectionMax * 2.8;
         const bool bRoundEnough = CrossSectionMax / CrossSectionMin <= 1.6;
         return bLong && bRoundEnough;
+    }
+
+    static bool ShouldUseSphere(const FPart& Part)
+    {
+        const double Largest = FMath::Max(0.001, Part.Extents.X);
+        const double Smallest = Part.Extents.GetMin();
+        return Smallest / Largest >= 0.78;
+    }
+
+    static ESmartCollisionMode ChooseAutomaticMode(const FPart& Part)
+    {
+        if (ShouldUseSphere(Part))
+        {
+            return ESmartCollisionMode::Sphere;
+        }
+        if (ShouldUseCapsule(Part))
+        {
+            return ESmartCollisionMode::Capsule;
+        }
+        return ESmartCollisionMode::OrientedBox;
+    }
+
+    static FPart MakeConvexPartWithThickness(
+        const FPart& Part,
+        float RequestedThickness)
+    {
+        const double HalfThickness = FMath::Max(0.05, RequestedThickness);
+        if (Part.Extents.Z >= HalfThickness)
+        {
+            return Part;
+        }
+
+        FPart ThickPart;
+        ThickPart.Points.Reserve(Part.Points.Num() * 2);
+        for (const FVector& Point : Part.Points)
+        {
+            ThickPart.Points.Add(Point + Part.Axis[2] * HalfThickness);
+            ThickPart.Points.Add(Point - Part.Axis[2] * HalfThickness);
+        }
+        ComputePrincipalAxes(ThickPart);
+        return ThickPart;
     }
 }
 
@@ -477,9 +536,7 @@ FSmartCollisionResult FSmartCollisionGenerator::Generate(
         ESmartCollisionMode EffectiveMode = Mode;
         if (Mode == ESmartCollisionMode::Automatic)
         {
-            EffectiveMode = ShouldUseCapsule(Part)
-                ? ESmartCollisionMode::Capsule
-                : ESmartCollisionMode::OrientedBox;
+            EffectiveMode = ChooseAutomaticMode(Part);
         }
 
         switch (EffectiveMode)
@@ -489,10 +546,15 @@ FSmartCollisionResult FSmartCollisionGenerator::Generate(
             ++Result.NumCapsules;
             break;
 
+        case ESmartCollisionMode::Sphere:
+            AddSphere(BodySetup, Part, Settings.Padding);
+            ++Result.NumSpheres;
+            break;
+
         case ESmartCollisionMode::Convex:
             AddConvex(
                 BodySetup,
-                Part,
+                MakeConvexPartWithThickness(Part, Settings.Padding),
                 FMath::Clamp(Settings.MaxConvexVertices, 8, 256));
             ++Result.NumConvex;
             break;
@@ -516,18 +578,120 @@ FSmartCollisionResult FSmartCollisionGenerator::Generate(
 
     BodySetup->InvalidatePhysicsData();
     BodySetup->CreatePhysicsMeshes();
+    StaticMesh->SetCustomizedCollision(true);
     StaticMesh->MarkPackageDirty();
     StaticMesh->PostEditChange();
 
     Result.bSuccess = true;
     Result.Message = FString::Printf(
-        TEXT("Generated %d shapes from %d connected parts: %d boxes, %d capsules, %d convex. Skipped %d. Save the Static Mesh asset to keep the result."),
+        TEXT("Generated %d shapes from %d connected parts: %d boxes, %d capsules, %d spheres, %d convex. Skipped %d. Save the Static Mesh asset to keep the result."),
         AddedShapes,
         Result.NumComponents,
         Result.NumBoxes,
         Result.NumCapsules,
+        Result.NumSpheres,
         Result.NumConvex,
         Result.NumSkipped);
+    return Result;
+}
+
+FSmartCollisionResult FSmartCollisionGenerator::GenerateFromPoints(
+    UStaticMesh* StaticMesh,
+    const TArray<FVector>& SelectedPoints,
+    ESmartCollisionMode Mode,
+    const FSmartCollisionSettings& Settings)
+{
+    using namespace SmartCollision;
+
+    FSmartCollisionResult Result;
+    if (!StaticMesh)
+    {
+        Result.Message = TEXT("The Static Mesh Editor has no active mesh.");
+        return Result;
+    }
+    if (SelectedPoints.Num() < 3)
+    {
+        Result.Message = TEXT("Select at least one non-degenerate triangle.");
+        return Result;
+    }
+
+    FPart Part;
+    Part.Points = SelectedPoints;
+    ComputePrincipalAxes(Part);
+
+    ESmartCollisionMode EffectiveMode =
+        Mode == ESmartCollisionMode::Automatic
+            ? ChooseAutomaticMode(Part)
+            : Mode;
+
+    const FScopedTransaction Transaction(
+        LOCTEXT("GenerateSelectedTransaction", "Generate Collision From Selected Geometry"));
+    StaticMesh->Modify();
+
+    if (!StaticMesh->GetBodySetup())
+    {
+        StaticMesh->CreateBodySetup();
+    }
+
+    UBodySetup* BodySetup = StaticMesh->GetBodySetup();
+    if (!BodySetup)
+    {
+        Result.Message = TEXT("Unable to create BodySetup for the Static Mesh.");
+        return Result;
+    }
+
+    BodySetup->Modify();
+    if (Settings.bReplaceExisting)
+    {
+        BodySetup->AggGeom.EmptyElements();
+    }
+
+    switch (EffectiveMode)
+    {
+    case ESmartCollisionMode::Capsule:
+        AddCapsule(BodySetup, Part, Settings.Padding);
+        Result.NumCapsules = 1;
+        break;
+
+    case ESmartCollisionMode::Sphere:
+        AddSphere(BodySetup, Part, Settings.Padding);
+        Result.NumSpheres = 1;
+        break;
+
+    case ESmartCollisionMode::Convex:
+        AddConvex(
+            BodySetup,
+            MakeConvexPartWithThickness(Part, Settings.Padding),
+            FMath::Clamp(Settings.MaxConvexVertices, 8, 256));
+        Result.NumConvex = 1;
+        break;
+
+    case ESmartCollisionMode::Automatic:
+    case ESmartCollisionMode::OrientedBox:
+    default:
+        AddOrientedBox(BodySetup, Part, Settings.Padding);
+        Result.NumBoxes = 1;
+        break;
+    }
+
+    BodySetup->InvalidatePhysicsData();
+    BodySetup->CreatePhysicsMeshes();
+    StaticMesh->SetCustomizedCollision(true);
+    StaticMesh->MarkPackageDirty();
+    StaticMesh->PostEditChange();
+
+    Result.bSuccess = true;
+    Result.NumComponents = 1;
+    const TCHAR* ShapeName =
+        EffectiveMode == ESmartCollisionMode::Capsule ? TEXT("capsule") :
+        EffectiveMode == ESmartCollisionMode::Sphere ? TEXT("sphere") :
+        EffectiveMode == ESmartCollisionMode::Convex ? TEXT("convex hull") :
+        TEXT("oriented box");
+
+    Result.Message = FString::Printf(
+        TEXT("Added one %s around %d selected points. Save the Static Mesh asset to keep it."),
+        ShapeName,
+        SelectedPoints.Num());
     return Result;
 }
 
