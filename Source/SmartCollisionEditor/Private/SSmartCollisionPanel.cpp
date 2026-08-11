@@ -1,6 +1,8 @@
 #include "SSmartCollisionPanel.h"
 
 #include "ContentBrowserModule.h"
+#include "AssetRegistry/AssetData.h"
+#include "Styling/CoreStyle.h"
 #include "Engine/StaticMesh.h"
 #include "Framework/Application/SlateApplication.h"
 #include "IContentBrowserSingleton.h"
