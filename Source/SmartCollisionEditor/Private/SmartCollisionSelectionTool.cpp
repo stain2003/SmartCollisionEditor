@@ -12,6 +12,48 @@
 
 namespace
 {
+    struct FEdgeKey
+    {
+        FIntVector A;
+        FIntVector B;
+
+        friend bool operator==(const FEdgeKey& Left, const FEdgeKey& Right)
+        {
+            return Left.A == Right.A && Left.B == Right.B;
+        }
+
+        friend uint32 GetTypeHash(const FEdgeKey& Key)
+        {
+            return HashCombineFast(::GetTypeHash(Key.A), ::GetTypeHash(Key.B));
+        }
+    };
+
+    static bool PositionLess(const FIntVector& A, const FIntVector& B)
+    {
+        return A.X != B.X ? A.X < B.X
+            : A.Y != B.Y ? A.Y < B.Y
+            : A.Z < B.Z;
+    }
+
+    static FEdgeKey MakeEdgeKey(const FVector& A, const FVector& B)
+    {
+        constexpr double WeldToleranceScale = 100.0;
+        FIntVector QA(
+            FMath::RoundToInt(A.X * WeldToleranceScale),
+            FMath::RoundToInt(A.Y * WeldToleranceScale),
+            FMath::RoundToInt(A.Z * WeldToleranceScale));
+        FIntVector QB(
+            FMath::RoundToInt(B.X * WeldToleranceScale),
+            FMath::RoundToInt(B.Y * WeldToleranceScale),
+            FMath::RoundToInt(B.Z * WeldToleranceScale));
+
+        if (PositionLess(QB, QA))
+        {
+            Swap(QA, QB);
+        }
+        return {QA, QB};
+    }
+
     struct FTriangleDisjointSet
     {
         explicit FTriangleDisjointSet(int32 Count)
@@ -98,7 +140,7 @@ void USmartCollisionSelectionTool::Setup()
     BuildTriangleCache();
     GetToolManager()->DisplayMessage(
         NSLOCTEXT("SmartCollisionEditor", "SelectionToolMessage",
-            "Click a face to select it. Connected Part mode selects the complete welded island. Ctrl toggles; Shift adds."),
+            "Click a surface to select it. Connected Part mode selects the complete topology island. Ctrl toggles; Shift adds."),
         EToolMessageLevel::UserNotification);
 }
 
@@ -146,28 +188,46 @@ void USmartCollisionSelectionTool::BuildTriangleCache()
         }
     }
 
-    FTriangleDisjointSet Sets(TriangleCount);
-    TMap<FIntVector, int32> FirstTriangleAtPosition;
+    FTriangleDisjointSet ComponentSets(TriangleCount);
+    FTriangleDisjointSet SurfaceSets(TriangleCount);
+    TMap<FEdgeKey, int32> FirstTriangleAtEdge;
+    constexpr double CoplanarNormalDot = 0.996194698; // five degrees
 
     for (int32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
     {
-        for (const FVector& Vertex : Triangles[TriangleIndex].Vertices)
+        FTriangle& Triangle = Triangles[TriangleIndex];
+        Triangle.Normal = FVector::CrossProduct(
+            Triangle.Vertices[1] - Triangle.Vertices[0],
+            Triangle.Vertices[2] - Triangle.Vertices[0]).GetSafeNormal();
+
+        for (int32 EdgeIndex = 0; EdgeIndex < 3; ++EdgeIndex)
         {
-            const FIntVector Key = QuantizePosition(Vertex);
-            if (const int32* Existing = FirstTriangleAtPosition.Find(Key))
+            const FEdgeKey Edge = MakeEdgeKey(
+                Triangle.Vertices[EdgeIndex],
+                Triangle.Vertices[(EdgeIndex + 1) % 3]);
+
+            if (const int32* Existing = FirstTriangleAtEdge.Find(Edge))
             {
-                Sets.Union(TriangleIndex, *Existing);
+                ComponentSets.Union(TriangleIndex, *Existing);
+                const double NormalDot = FMath::Abs(FVector::DotProduct(
+                    Triangle.Normal,
+                    Triangles[*Existing].Normal));
+                if (NormalDot >= CoplanarNormalDot)
+                {
+                    SurfaceSets.Union(TriangleIndex, *Existing);
+                }
             }
             else
             {
-                FirstTriangleAtPosition.Add(Key, TriangleIndex);
+                FirstTriangleAtEdge.Add(Edge, TriangleIndex);
             }
         }
     }
 
     for (int32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
     {
-        Triangles[TriangleIndex].Component = Sets.Find(TriangleIndex);
+        Triangles[TriangleIndex].Component = ComponentSets.Find(TriangleIndex);
+        Triangles[TriangleIndex].Surface = SurfaceSets.Find(TriangleIndex);
     }
 
     NotifySelectionChanged();
@@ -258,7 +318,14 @@ void USmartCollisionSelectionTool::OnClicked(const FInputDeviceRay& ClickPos)
     }
     else
     {
-        ClickedSet.Add(HitTriangle);
+        const int32 Surface = Triangles[HitTriangle].Surface;
+        for (int32 TriangleIndex = 0; TriangleIndex < Triangles.Num(); ++TriangleIndex)
+        {
+            if (Triangles[TriangleIndex].Surface == Surface)
+            {
+                ClickedSet.Add(TriangleIndex);
+            }
+        }
     }
 
     if (!bAdd)
