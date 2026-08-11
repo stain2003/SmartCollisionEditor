@@ -36,6 +36,7 @@ private:
     void SetStatus(const FString& Message);
     void UpdateSelectionSummary(int32 TriangleCount, int32 PointCount);
 
+    bool EnsureSelectionToolRegistered();
     class UInteractiveToolManager* GetToolManager() const;
     USmartCollisionSelectionTool* GetSelectionTool() const;
 
