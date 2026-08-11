@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 1,
-  "VersionName": "0.1.0",
+  "Version": 2,
+  "VersionName": "0.2.0",
   "FriendlyName": "Smart Collision Editor",
-  "Description": "Fits simple collision to connected parts of a Static Mesh using PCA-oriented boxes, capsules, and convex hull point clouds.",
+  "Description": "Select connected parts or planar face regions inside the Static Mesh Editor and fit standard Unreal collision primitives around the selection.",
   "Category": "Editor",
   "CreatedBy": "fuyutianji",
   "CanContainContent": false,
