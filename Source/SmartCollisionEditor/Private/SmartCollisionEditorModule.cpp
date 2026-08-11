@@ -6,6 +6,10 @@
 #include "SSmartCollisionPanel.h"
 #include "StaticMeshEditorModule.h"
 #include "Styling/AppStyle.h"
+#include "ToolMenu.h"
+#include "ToolMenuSection.h"
+#include "ToolMenus.h"
+#include "Toolkits/AssetEditorToolkitMenuContext.h"
 #include "Widgets/Docking/SDockTab.h"
 
 #define LOCTEXT_NAMESPACE "FSmartCollisionEditorModule"
@@ -28,6 +32,11 @@ namespace
 
 void FSmartCollisionEditorModule::StartupModule()
 {
+    UToolMenus::RegisterStartupCallback(
+        FSimpleMulticastDelegate::FDelegate::CreateRaw(
+            this,
+            &FSmartCollisionEditorModule::RegisterMenus));
+
     IStaticMeshEditorModule& StaticMeshEditorModule =
         FModuleManager::LoadModuleChecked<IStaticMeshEditorModule>(TEXT("StaticMeshEditor"));
 
@@ -46,6 +55,9 @@ void FSmartCollisionEditorModule::StartupModule()
 
 void FSmartCollisionEditorModule::ShutdownModule()
 {
+    UToolMenus::UnRegisterStartupCallback(this);
+    UToolMenus::UnregisterOwner(this);
+
     if (!FModuleManager::Get().IsModuleLoaded(TEXT("StaticMeshEditor")))
     {
         return;
@@ -60,6 +72,65 @@ void FSmartCollisionEditorModule::ShutdownModule()
         {
             return Extender.GetHandle() == ToolbarExtenderHandle;
         });
+}
+
+void FSmartCollisionEditorModule::RegisterMenus()
+{
+    FToolMenuOwnerScoped OwnerScoped(this);
+
+    UToolMenu* CollisionMenu =
+        UToolMenus::Get()->ExtendMenu(TEXT("StaticMeshEditor.Collision"));
+    if (!CollisionMenu)
+    {
+        return;
+    }
+
+    FToolMenuSection& Section = CollisionMenu->AddSection(
+        TEXT("SmartCollisionEditor"),
+        LOCTEXT("SmartCollisionSection", "Smart Collision"));
+    Section.InsertPosition = FToolMenuInsert(
+        TEXT("CollisionAutoConvexCollision"),
+        EToolMenuInsertType::After);
+
+    Section.AddDynamicEntry(
+        TEXT("OpenSmartCollisionDynamic"),
+        FNewToolMenuSectionDelegate::CreateLambda(
+            [](FToolMenuSection& InSection)
+            {
+                const UAssetEditorToolkitMenuContext* Context =
+                    InSection.FindContext<UAssetEditorToolkitMenuContext>();
+                if (!Context)
+                {
+                    return;
+                }
+
+                const TSharedPtr<FAssetEditorToolkit> Toolkit =
+                    Context->Toolkit.Pin();
+                if (!Toolkit
+                    || Toolkit->GetToolkitFName() != FName(TEXT("StaticMeshEditor")))
+                {
+                    return;
+                }
+
+                const TSharedPtr<IStaticMeshEditor> Editor =
+                    StaticCastSharedPtr<IStaticMeshEditor>(Toolkit);
+                const TWeakPtr<IStaticMeshEditor> WeakEditor = Editor;
+
+                InSection.AddMenuEntry(
+                    TEXT("OpenSmartCollision"),
+                    LOCTEXT(
+                        "OpenSmartCollisionMenuLabel",
+                        "Smart Collision (Selected Geometry)"),
+                    LOCTEXT(
+                        "OpenSmartCollisionMenuTooltip",
+                        "Open the embedded panel for selecting mesh parts or surfaces and fitting collision."),
+                    FSlateIcon(
+                        FAppStyle::GetAppStyleSetName(),
+                        TEXT("StaticMeshEditor.SetShowCollision")),
+                    FUIAction(FExecuteAction::CreateStatic(
+                        &OpenSmartCollisionTab,
+                        WeakEditor)));
+            }));
 }
 
 void FSmartCollisionEditorModule::HandleStaticMeshEditorOpened(
