@@ -15,14 +15,17 @@ public class SmartCollisionEditor : ModuleRules
 
         PrivateDependencyModuleNames.AddRange(new[]
         {
+            "ApplicationCore",
             "AssetRegistry",
             "ContentBrowser",
             "InputCore",
+            "InteractiveToolsFramework",
             "LevelEditor",
             "MeshDescription",
             "Slate",
             "SlateCore",
             "StaticMeshDescription",
+            "StaticMeshEditor",
             "ToolMenus",
             "UnrealEd"
         });
