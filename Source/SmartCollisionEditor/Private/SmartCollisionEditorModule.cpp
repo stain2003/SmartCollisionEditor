@@ -1,6 +1,8 @@
 #include "SmartCollisionEditorModule.h"
 
 #include "SSmartCollisionPanel.h"
+#include "Framework/Commands/UIAction.h"
+#include "Framework/Docking/TabManager.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 
