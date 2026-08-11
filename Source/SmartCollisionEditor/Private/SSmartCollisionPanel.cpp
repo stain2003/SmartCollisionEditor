@@ -26,15 +26,6 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
     StaticMeshEditor = InArgs._StaticMeshEditor;
     SelectionMode = ESmartCollisionSelectionMode::ConnectedPart;
 
-    if (UInteractiveToolManager* ToolManager = GetToolManager())
-    {
-        USmartCollisionSelectionToolBuilder* Builder =
-            NewObject<USmartCollisionSelectionToolBuilder>(ToolManager);
-        Builder->Initialize(StaticMeshEditor);
-        ToolManager->RegisterToolType(SmartCollisionSelection::ToolIdentifier, Builder);
-        SelectionToolBuilder = Builder;
-    }
-
     ChildSlot
     [
         SNew(SBorder)
@@ -236,15 +227,49 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
 
 SSmartCollisionPanel::~SSmartCollisionPanel()
 {
-    if (UInteractiveToolManager* ToolManager = GetToolManager())
+    if (SelectionToolBuilder.IsValid())
     {
-        if (ToolManager->GetActiveToolType(EToolSide::Left)
-            == SmartCollisionSelection::ToolIdentifier)
+        if (UInteractiveToolManager* ToolManager = GetToolManager())
         {
-            ToolManager->DeactivateTool(EToolSide::Left, EToolShutdownType::Cancel);
+            if (ToolManager->GetActiveToolType(EToolSide::Left)
+                == SmartCollisionSelection::ToolIdentifier)
+            {
+                ToolManager->DeactivateTool(
+                    EToolSide::Left,
+                    EToolShutdownType::Cancel);
+            }
+            ToolManager->UnregisterToolType(
+                SmartCollisionSelection::ToolIdentifier);
         }
-        ToolManager->UnregisterToolType(SmartCollisionSelection::ToolIdentifier);
     }
+}
+
+bool SSmartCollisionPanel::EnsureSelectionToolRegistered()
+{
+    if (SelectionToolBuilder.IsValid())
+    {
+        return true;
+    }
+
+    UInteractiveToolManager* ToolManager = GetToolManager();
+    if (!ToolManager)
+    {
+        return false;
+    }
+
+    USmartCollisionSelectionToolBuilder* Builder =
+        NewObject<USmartCollisionSelectionToolBuilder>(ToolManager);
+    if (!Builder)
+    {
+        return false;
+    }
+
+    Builder->Initialize(StaticMeshEditor);
+    ToolManager->RegisterToolType(
+        SmartCollisionSelection::ToolIdentifier,
+        Builder);
+    SelectionToolBuilder = Builder;
+    return true;
 }
 
 UInteractiveToolManager* SSmartCollisionPanel::GetToolManager() const
@@ -277,9 +302,9 @@ USmartCollisionSelectionTool* SSmartCollisionPanel::GetSelectionTool() const
 FReply SSmartCollisionPanel::StartPicking()
 {
     UInteractiveToolManager* ToolManager = GetToolManager();
-    if (!ToolManager)
+    if (!ToolManager || !EnsureSelectionToolRegistered())
     {
-        SetStatus(TEXT("The Static Mesh Editor interactive tools context is unavailable."));
+        SetStatus(TEXT("The Static Mesh Editor interactive tools context is not ready."));
         return FReply::Handled();
     }
 
