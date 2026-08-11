@@ -1,0 +1,19 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "Smart Collision Editor",
+  "Description": "Fits simple collision to connected parts of a Static Mesh using PCA-oriented boxes, capsules, and convex hull point clouds.",
+  "Category": "Editor",
+  "CreatedBy": "fuyutianji",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "SmartCollisionEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}
