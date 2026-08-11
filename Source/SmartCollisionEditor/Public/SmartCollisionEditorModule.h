@@ -15,6 +15,7 @@ public:
     virtual void ShutdownModule() override;
 
 private:
+    void RegisterMenus();
     void HandleStaticMeshEditorOpened(TWeakPtr<IStaticMeshEditor> Editor);
     TSharedRef<FExtender> ExtendStaticMeshEditorToolbar(
         const TSharedRef<FUICommandList> CommandList,
