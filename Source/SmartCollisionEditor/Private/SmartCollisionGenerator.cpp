@@ -7,6 +7,8 @@
 #include "ScopedTransaction.h"
 #include "StaticMeshAttributes.h"
 
+#include <cfloat>
+
 #define LOCTEXT_NAMESPACE "SmartCollisionGenerator"
 
 namespace SmartCollision
@@ -415,6 +417,25 @@ FSmartCollisionResult FSmartCollisionGenerator::Generate(
     {
         return A.Points.Num() > B.Points.Num();
     });
+
+    int32 NumEligibleParts = 0;
+    for (const FPart& Part : Parts)
+    {
+        if (Part.Extents.GetMax() * 2.0 >= Settings.MinimumPartSize)
+        {
+            ++NumEligibleParts;
+            if (NumEligibleParts >= Settings.MaxShapes)
+            {
+                break;
+            }
+        }
+    }
+
+    if (NumEligibleParts == 0)
+    {
+        Result.Message = TEXT("Every connected part was filtered out. Lower the minimum part size.");
+        return Result;
+    }
 
     const FScopedTransaction Transaction(LOCTEXT("GenerateTransaction", "Generate Smart Collision"));
     StaticMesh->Modify();
