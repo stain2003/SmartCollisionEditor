@@ -435,7 +435,7 @@ namespace SmartCollision
         const FPart& Part,
         float RequestedThickness)
     {
-        const double HalfThickness = FMath::Max(0.05, RequestedThickness);
+        const double HalfThickness = FMath::Max(0.05, static_cast<double>(RequestedThickness));
         if (Part.Extents.Z >= HalfThickness)
         {
             return Part;
