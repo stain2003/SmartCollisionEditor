@@ -1,13 +1,14 @@
 #include "SmartCollisionSelectionTool.h"
 
 #include "Engine/StaticMesh.h"
-#include "Engine/StaticMeshActor.h"
 #include "IStaticMeshEditor.h"
 #include "InteractiveToolManager.h"
 #include "PrimitiveDrawInterface.h"
 #include "Rendering/StaticMeshRenderData.h"
-#include "SlateApplication.h"
+#include "Framework/Application/SlateApplication.h"
 #include "ToolContextInterfaces.h"
+
+#include <cfloat>
 
 namespace
 {
