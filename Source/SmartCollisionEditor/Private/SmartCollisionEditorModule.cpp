@@ -35,11 +35,13 @@ void FSmartCollisionEditorModule::StartupModule()
         this,
         &FSmartCollisionEditorModule::HandleStaticMeshEditorOpened);
 
-    ToolbarExtenderHandle =
-        StaticMeshEditorModule.GetAllStaticMeshEditorToolbarExtenders().Add(
-            IStaticMeshEditorModule::FStaticMeshEditorToolbarExtender::CreateRaw(
-                this,
-                &FSmartCollisionEditorModule::ExtendStaticMeshEditorToolbar));
+    IStaticMeshEditorModule::FStaticMeshEditorToolbarExtender ToolbarExtender =
+        IStaticMeshEditorModule::FStaticMeshEditorToolbarExtender::CreateRaw(
+            this,
+            &FSmartCollisionEditorModule::ExtendStaticMeshEditorToolbar);
+    ToolbarExtenderHandle = ToolbarExtender.GetHandle();
+    StaticMeshEditorModule.GetAllStaticMeshEditorToolbarExtenders().Add(
+        MoveTemp(ToolbarExtender));
 }
 
 void FSmartCollisionEditorModule::ShutdownModule()
@@ -53,7 +55,11 @@ void FSmartCollisionEditorModule::ShutdownModule()
         FModuleManager::GetModuleChecked<IStaticMeshEditorModule>(TEXT("StaticMeshEditor"));
 
     StaticMeshEditorModule.OnStaticMeshEditorOpened().Remove(EditorOpenedHandle);
-    StaticMeshEditorModule.GetAllStaticMeshEditorToolbarExtenders().Remove(ToolbarExtenderHandle);
+    StaticMeshEditorModule.GetAllStaticMeshEditorToolbarExtenders().RemoveAll(
+        [this](const IStaticMeshEditorModule::FStaticMeshEditorToolbarExtender& Extender)
+        {
+            return Extender.GetHandle() == ToolbarExtenderHandle;
+        });
 }
 
 void FSmartCollisionEditorModule::HandleStaticMeshEditorOpened(
