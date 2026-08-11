@@ -3,35 +3,49 @@
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
 
+class IStaticMeshEditor;
 class STextBlock;
-class UStaticMesh;
+class USmartCollisionSelectionTool;
+enum class ESmartCollisionMode : uint8;
+enum class ESmartCollisionSelectionMode : uint8;
 
 class SSmartCollisionPanel final : public SCompoundWidget
 {
 public:
     SLATE_BEGIN_ARGS(SSmartCollisionPanel) {}
+        SLATE_ARGUMENT(TWeakPtr<IStaticMeshEditor>, StaticMeshEditor)
     SLATE_END_ARGS()
 
     void Construct(const FArguments& InArgs);
+    virtual ~SSmartCollisionPanel() override;
 
 private:
-    FReply RefreshSelection();
+    FReply StartPicking();
+    FReply ClearSelection();
+    FReply SelectAll();
     FReply GenerateAutomatic();
     FReply GenerateBox();
     FReply GenerateCapsule();
+    FReply GenerateSphere();
     FReply GenerateConvex();
     FReply ClearCollision();
 
-    void Generate(uint8 ModeValue);
+    void SetSelectionMode(ESmartCollisionSelectionMode Mode);
+    ECheckBoxState IsSelectionModeChecked(ESmartCollisionSelectionMode Mode) const;
+    void Generate(ESmartCollisionMode Mode);
     void SetStatus(const FString& Message);
-    UStaticMesh* FindSelectedStaticMesh() const;
+    void UpdateSelectionSummary(int32 TriangleCount, int32 PointCount);
 
-    TWeakObjectPtr<UStaticMesh> SelectedMesh;
-    TSharedPtr<STextBlock> SelectedMeshText;
+    class UInteractiveToolManager* GetToolManager() const;
+    USmartCollisionSelectionTool* GetSelectionTool() const;
+
+    TWeakPtr<IStaticMeshEditor> StaticMeshEditor;
+    TWeakObjectPtr<class USmartCollisionSelectionToolBuilder> SelectionToolBuilder;
+    TSharedPtr<STextBlock> SelectionText;
     TSharedPtr<STextBlock> StatusText;
 
+    ESmartCollisionSelectionMode SelectionMode;
     float Padding = 0.25f;
-    float MinimumPartSize = 1.0f;
     int32 MaxConvexVertices = 64;
-    bool bReplaceExisting = true;
+    bool bReplaceExisting = false;
 };
