@@ -1,19 +1,19 @@
 #include "SSmartCollisionPanel.h"
 
-#include "ContentBrowserModule.h"
-#include "AssetRegistry/AssetData.h"
-#include "Styling/CoreStyle.h"
+#include "EditorModeManager.h"
 #include "Engine/StaticMesh.h"
-#include "Framework/Application/SlateApplication.h"
-#include "IContentBrowserSingleton.h"
+#include "IStaticMeshEditor.h"
+#include "InteractiveToolManager.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "ScopedTransaction.h"
 #include "SmartCollisionGenerator.h"
+#include "SmartCollisionSelectionTool.h"
+#include "Styling/AppStyle.h"
+#include "Tools/EdModeInteractiveToolsContext.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBorder.h"
-#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/SBoxPanel.h"
@@ -23,10 +23,22 @@
 
 void SSmartCollisionPanel::Construct(const FArguments& InArgs)
 {
+    StaticMeshEditor = InArgs._StaticMeshEditor;
+    SelectionMode = ESmartCollisionSelectionMode::ConnectedPart;
+
+    if (UInteractiveToolManager* ToolManager = GetToolManager())
+    {
+        USmartCollisionSelectionToolBuilder* Builder =
+            NewObject<USmartCollisionSelectionToolBuilder>(ToolManager);
+        Builder->Initialize(StaticMeshEditor);
+        ToolManager->RegisterToolType(SmartCollisionSelection::ToolIdentifier, Builder);
+        SelectionToolBuilder = Builder;
+    }
+
     ChildSlot
     [
         SNew(SBorder)
-        .Padding(12.0f)
+        .Padding(10.0f)
         [
             SNew(SScrollBox)
             + SScrollBox::Slot()
@@ -36,14 +48,17 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                 + SVerticalBox::Slot().AutoHeight()
                 [
                     SNew(STextBlock)
-                    .Text(LOCTEXT("Title", "Smart Collision Editor"))
-                    .Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
+                    .Text(LOCTEXT("Title", "Interactive Smart Collision"))
+                    .Font(FAppStyle::GetFontStyle(TEXT("BoldFont")))
                 ]
 
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 6)
                 [
                     SNew(STextBlock)
-                    .Text(LOCTEXT("Help", "Select one Static Mesh in the Content Browser. LOD0 is split into connected parts, then each part is fitted independently."))
+                    .Text(LOCTEXT(
+                        "Instructions",
+                        "1. Start picking. 2. Click a face or connected part in the viewport. "
+                        "Ctrl toggles and Shift adds. 3. Choose a collision shape."))
                     .AutoWrapText(true)
                 ]
 
@@ -52,25 +67,75 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     SNew(SHorizontalBox)
                     + SHorizontalBox::Slot().FillWidth(1)
                     [
-                        SAssignNew(SelectedMeshText, STextBlock)
-                        .Text(LOCTEXT("NoSelection", "Selected mesh: none"))
+                        SNew(SCheckBox)
+                        .Style(FAppStyle::Get(), TEXT("RadioButton"))
+                        .IsChecked(this, &SSmartCollisionPanel::IsSelectionModeChecked,
+                            ESmartCollisionSelectionMode::ConnectedPart)
+                        .OnCheckStateChanged_Lambda([this](ECheckBoxState)
+                        {
+                            SetSelectionMode(ESmartCollisionSelectionMode::ConnectedPart);
+                        })
+                        [
+                            SNew(STextBlock).Text(LOCTEXT("PartMode", "Connected part"))
+                        ]
                     ]
-                    + SHorizontalBox::Slot().AutoWidth().Padding(6, 0, 0, 0)
+                    + SHorizontalBox::Slot().FillWidth(1)
                     [
-                        SNew(SButton)
-                        .Text(LOCTEXT("Refresh", "Use Content Browser Selection"))
-                        .OnClicked(this, &SSmartCollisionPanel::RefreshSelection)
+                        SNew(SCheckBox)
+                        .Style(FAppStyle::Get(), TEXT("RadioButton"))
+                        .IsChecked(this, &SSmartCollisionPanel::IsSelectionModeChecked,
+                            ESmartCollisionSelectionMode::Face)
+                        .OnCheckStateChanged_Lambda([this](ECheckBoxState)
+                        {
+                            SetSelectionMode(ESmartCollisionSelectionMode::Face);
+                        })
+                        [
+                            SNew(STextBlock).Text(LOCTEXT("FaceMode", "Face"))
+                        ]
                     ]
                 ]
 
-                + SVerticalBox::Slot().AutoHeight().Padding(0, 8)
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("StartPicking", "Start viewport picking"))
+                    .ToolTipText(LOCTEXT(
+                        "StartPickingTip",
+                        "Activates face picking inside this Static Mesh Editor viewport."))
+                    .OnClicked(this, &SSmartCollisionPanel::StartPicking)
+                ]
+
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
+                [
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot().FillWidth(1)
+                    [
+                        SNew(SButton)
+                        .Text(LOCTEXT("ClearSelection", "Clear selection"))
+                        .OnClicked(this, &SSmartCollisionPanel::ClearSelection)
+                    ]
+                    + SHorizontalBox::Slot().FillWidth(1).Padding(4, 0, 0, 0)
+                    [
+                        SNew(SButton)
+                        .Text(LOCTEXT("SelectAll", "Select entire mesh"))
+                        .OnClicked(this, &SSmartCollisionPanel::SelectAll)
+                    ]
+                ]
+
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
+                [
+                    SAssignNew(SelectionText, STextBlock)
+                    .Text(LOCTEXT("NoSelection", "Selection: 0 triangles, 0 points"))
+                ]
+
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 6)
                 [
                     SNew(SSeparator)
                 ]
 
                 + SVerticalBox::Slot().AutoHeight()
                 [
-                    SNew(STextBlock).Text(LOCTEXT("PaddingLabel", "Collision padding (cm)"))
+                    SNew(STextBlock).Text(LOCTEXT("PaddingLabel", "Collision padding / face thickness (cm)"))
                 ]
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 6)
                 [
@@ -83,20 +148,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
 
                 + SVerticalBox::Slot().AutoHeight()
                 [
-                    SNew(STextBlock).Text(LOCTEXT("MinSizeLabel", "Ignore parts smaller than (cm)"))
-                ]
-                + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 6)
-                [
-                    SNew(SNumericEntryBox<float>)
-                    .MinValue(0.0f)
-                    .MaxValue(1000.0f)
-                    .Value_Lambda([this] { return MinimumPartSize; })
-                    .OnValueChanged_Lambda([this](float Value) { MinimumPartSize = Value; })
-                ]
-
-                + SVerticalBox::Slot().AutoHeight()
-                [
-                    SNew(STextBlock).Text(LOCTEXT("ConvexVerticesLabel", "Maximum vertices per convex hull"))
+                    SNew(STextBlock).Text(LOCTEXT("ConvexVertices", "Maximum convex vertices"))
                 ]
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 6)
                 [
@@ -112,22 +164,25 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     SNew(SCheckBox)
                     .IsChecked_Lambda([this]
                     {
-                        return bReplaceExisting ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+                        return bReplaceExisting
+                            ? ECheckBoxState::Checked
+                            : ECheckBoxState::Unchecked;
                     })
                     .OnCheckStateChanged_Lambda([this](ECheckBoxState State)
                     {
                         bReplaceExisting = State == ECheckBoxState::Checked;
                     })
                     [
-                        SNew(STextBlock).Text(LOCTEXT("ReplaceExisting", "Replace existing simple collision"))
+                        SNew(STextBlock).Text(LOCTEXT(
+                            "ReplaceExisting",
+                            "Replace all existing collision before adding"))
                     ]
                 ]
 
                 + SVerticalBox::Slot().AutoHeight()
                 [
                     SNew(SButton)
-                    .Text(LOCTEXT("Auto", "Generate Auto (recommended)"))
-                    .ToolTipText(LOCTEXT("AutoTip", "Long round parts become capsules; other parts become oriented boxes."))
+                    .Text(LOCTEXT("Auto", "Auto fit selected geometry"))
                     .OnClicked(this, &SSmartCollisionPanel::GenerateAutomatic)
                 ]
 
@@ -137,7 +192,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     + SHorizontalBox::Slot().FillWidth(1)
                     [
                         SNew(SButton)
-                        .Text(LOCTEXT("Box", "Oriented Box"))
+                        .Text(LOCTEXT("Box", "Box"))
                         .OnClicked(this, &SSmartCollisionPanel::GenerateBox)
                     ]
                     + SHorizontalBox::Slot().FillWidth(1).Padding(4, 0)
@@ -149,135 +204,251 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     + SHorizontalBox::Slot().FillWidth(1)
                     [
                         SNew(SButton)
-                        .Text(LOCTEXT("Convex", "Convex"))
-                        .OnClicked(this, &SSmartCollisionPanel::GenerateConvex)
+                        .Text(LOCTEXT("Sphere", "Sphere"))
+                        .OnClicked(this, &SSmartCollisionPanel::GenerateSphere)
                     ]
                 ]
 
-                + SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
                 [
                     SNew(SButton)
-                    .Text(LOCTEXT("Clear", "Clear Simple Collision"))
+                    .Text(LOCTEXT("Convex", "Convex hull"))
+                    .OnClicked(this, &SSmartCollisionPanel::GenerateConvex)
+                ]
+
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("ClearCollision", "Clear all simple collision"))
                     .OnClicked(this, &SSmartCollisionPanel::ClearCollision)
                 ]
 
-                + SVerticalBox::Slot().AutoHeight().Padding(0, 10)
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 8)
                 [
                     SAssignNew(StatusText, STextBlock)
-                    .Text(LOCTEXT("Ready", "Ready."))
+                    .Text(LOCTEXT("Ready", "Ready. Start viewport picking."))
                     .AutoWrapText(true)
                 ]
             ]
         ]
     ];
-
-    RefreshSelection();
 }
 
-UStaticMesh* SSmartCollisionPanel::FindSelectedStaticMesh() const
+SSmartCollisionPanel::~SSmartCollisionPanel()
 {
-    FContentBrowserModule& ContentBrowserModule =
-        FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
-
-    TArray<FAssetData> SelectedAssets;
-    ContentBrowserModule.Get().GetSelectedAssets(SelectedAssets);
-
-    for (const FAssetData& AssetData : SelectedAssets)
+    if (UInteractiveToolManager* ToolManager = GetToolManager())
     {
-        if (UStaticMesh* Mesh = Cast<UStaticMesh>(AssetData.GetAsset()))
+        if (ToolManager->GetActiveToolType(EToolSide::Left)
+            == SmartCollisionSelection::ToolIdentifier)
         {
-            return Mesh;
+            ToolManager->DeactivateTool(EToolSide::Left, EToolShutdownType::Cancel);
+        }
+        ToolManager->UnregisterToolType(SmartCollisionSelection::ToolIdentifier);
+    }
+}
+
+UInteractiveToolManager* SSmartCollisionPanel::GetToolManager() const
+{
+    const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
+    if (!Editor)
+    {
+        return nullptr;
+    }
+
+    UModeManagerInteractiveToolsContext* ToolsContext =
+        Editor->GetEditorModeManager().GetInteractiveToolsContext();
+    return ToolsContext ? ToolsContext->ToolManager : nullptr;
+}
+
+USmartCollisionSelectionTool* SSmartCollisionPanel::GetSelectionTool() const
+{
+    UInteractiveToolManager* ToolManager = GetToolManager();
+    if (!ToolManager
+        || ToolManager->GetActiveToolType(EToolSide::Left)
+            != SmartCollisionSelection::ToolIdentifier)
+    {
+        return nullptr;
+    }
+
+    return Cast<USmartCollisionSelectionTool>(
+        ToolManager->GetActiveTool(EToolSide::Left));
+}
+
+FReply SSmartCollisionPanel::StartPicking()
+{
+    UInteractiveToolManager* ToolManager = GetToolManager();
+    if (!ToolManager)
+    {
+        SetStatus(TEXT("The Static Mesh Editor interactive tools context is unavailable."));
+        return FReply::Handled();
+    }
+
+    if (ToolManager->GetActiveToolType(EToolSide::Left)
+        != SmartCollisionSelection::ToolIdentifier)
+    {
+        if (ToolManager->HasActiveTool(EToolSide::Left))
+        {
+            ToolManager->DeactivateTool(EToolSide::Left, EToolShutdownType::Cancel);
+        }
+
+        if (!ToolManager->SelectActiveToolType(
+            EToolSide::Left,
+            SmartCollisionSelection::ToolIdentifier)
+            || !ToolManager->ActivateTool(EToolSide::Left))
+        {
+            SetStatus(TEXT("Unable to activate viewport picking."));
+            return FReply::Handled();
         }
     }
 
-    return nullptr;
+    if (USmartCollisionSelectionTool* Tool = GetSelectionTool())
+    {
+        Tool->SetSelectionMode(SelectionMode);
+        const TWeakPtr<SSmartCollisionPanel> WeakThis = SharedThis(this);
+        Tool->SetSelectionChangedCallback(
+            [WeakThis](int32 TriangleCount, int32 PointCount)
+            {
+                if (const TSharedPtr<SSmartCollisionPanel> Panel = WeakThis.Pin())
+                {
+                    Panel->UpdateSelectionSummary(TriangleCount, PointCount);
+                }
+            });
+        SetStatus(TEXT("Picking is active. Click geometry in the viewport."));
+    }
+
+    return FReply::Handled();
 }
 
-FReply SSmartCollisionPanel::RefreshSelection()
+void SSmartCollisionPanel::SetSelectionMode(ESmartCollisionSelectionMode Mode)
 {
-    SelectedMesh = FindSelectedStaticMesh();
-
-    if (SelectedMesh.IsValid())
+    SelectionMode = Mode;
+    if (USmartCollisionSelectionTool* Tool = GetSelectionTool())
     {
-        SelectedMeshText->SetText(FText::Format(
-            LOCTEXT("SelectedFormat", "Selected mesh: {0}"),
-            FText::FromString(SelectedMesh->GetPathName())));
-        SetStatus(TEXT("Static Mesh selected. Choose a generation mode."));
+        Tool->SetSelectionMode(Mode);
+    }
+}
+
+ECheckBoxState SSmartCollisionPanel::IsSelectionModeChecked(
+    ESmartCollisionSelectionMode Mode) const
+{
+    return SelectionMode == Mode
+        ? ECheckBoxState::Checked
+        : ECheckBoxState::Unchecked;
+}
+
+FReply SSmartCollisionPanel::ClearSelection()
+{
+    if (USmartCollisionSelectionTool* Tool = GetSelectionTool())
+    {
+        Tool->ClearSelection();
     }
     else
     {
-        SelectedMeshText->SetText(LOCTEXT("NoSelection", "Selected mesh: none"));
-        SetStatus(TEXT("Select a Static Mesh in the Content Browser."));
+        SetStatus(TEXT("Start viewport picking first."));
     }
+    return FReply::Handled();
+}
 
+FReply SSmartCollisionPanel::SelectAll()
+{
+    if (USmartCollisionSelectionTool* Tool = GetSelectionTool())
+    {
+        Tool->SelectAll();
+    }
+    else
+    {
+        StartPicking();
+        if (USmartCollisionSelectionTool* Tool = GetSelectionTool())
+        {
+            Tool->SelectAll();
+        }
+    }
     return FReply::Handled();
 }
 
 FReply SSmartCollisionPanel::GenerateAutomatic()
 {
-    Generate(static_cast<uint8>(ESmartCollisionMode::Automatic));
+    Generate(ESmartCollisionMode::Automatic);
     return FReply::Handled();
 }
 
 FReply SSmartCollisionPanel::GenerateBox()
 {
-    Generate(static_cast<uint8>(ESmartCollisionMode::OrientedBox));
+    Generate(ESmartCollisionMode::OrientedBox);
     return FReply::Handled();
 }
 
 FReply SSmartCollisionPanel::GenerateCapsule()
 {
-    Generate(static_cast<uint8>(ESmartCollisionMode::Capsule));
+    Generate(ESmartCollisionMode::Capsule);
+    return FReply::Handled();
+}
+
+FReply SSmartCollisionPanel::GenerateSphere()
+{
+    Generate(ESmartCollisionMode::Sphere);
     return FReply::Handled();
 }
 
 FReply SSmartCollisionPanel::GenerateConvex()
 {
-    Generate(static_cast<uint8>(ESmartCollisionMode::Convex));
+    Generate(ESmartCollisionMode::Convex);
     return FReply::Handled();
 }
 
-void SSmartCollisionPanel::Generate(uint8 ModeValue)
+void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
 {
-    if (!SelectedMesh.IsValid())
+    const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
+    USmartCollisionSelectionTool* Tool = GetSelectionTool();
+    if (!Editor || !Tool)
     {
-        RefreshSelection();
+        SetStatus(TEXT("Start viewport picking and select geometry first."));
+        return;
     }
 
-    UStaticMesh* Mesh = SelectedMesh.Get();
-    if (!Mesh)
+    TArray<FVector> SelectedPoints;
+    Tool->GetSelectedPoints(SelectedPoints);
+    if (SelectedPoints.Num() < 3)
     {
+        SetStatus(TEXT("Select at least one triangle."));
         return;
     }
 
     FSmartCollisionSettings Settings;
     Settings.Padding = Padding;
-    Settings.MinimumPartSize = MinimumPartSize;
     Settings.MaxConvexVertices = MaxConvexVertices;
     Settings.bReplaceExisting = bReplaceExisting;
 
-    const FSmartCollisionResult Result = FSmartCollisionGenerator::Generate(
-        Mesh,
-        static_cast<ESmartCollisionMode>(ModeValue),
-        Settings);
+    const FSmartCollisionResult Result =
+        FSmartCollisionGenerator::GenerateFromPoints(
+            Editor->GetStaticMesh(),
+            SelectedPoints,
+            Mode,
+            Settings);
 
     SetStatus(Result.Message);
+    if (Result.bSuccess)
+    {
+        Editor->RefreshTool();
+        if (!Editor->IsShowSimpleCollisionChecked())
+        {
+            Editor->ToggleShowSimpleCollision();
+        }
+        Editor->RefreshViewport();
+    }
 }
 
 FReply SSmartCollisionPanel::ClearCollision()
 {
-    if (!SelectedMesh.IsValid())
-    {
-        RefreshSelection();
-    }
-
-    UStaticMesh* Mesh = SelectedMesh.Get();
+    const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
+    UStaticMesh* Mesh = Editor ? Editor->GetStaticMesh() : nullptr;
     if (!Mesh)
     {
         return FReply::Handled();
     }
 
-    const FScopedTransaction Transaction(LOCTEXT("ClearTransaction", "Clear Smart Collision"));
+    const FScopedTransaction Transaction(
+        LOCTEXT("ClearCollisionTransaction", "Clear Smart Collision"));
     Mesh->Modify();
 
     if (UBodySetup* BodySetup = Mesh->GetBodySetup())
@@ -286,9 +457,13 @@ FReply SSmartCollisionPanel::ClearCollision()
         BodySetup->AggGeom.EmptyElements();
         BodySetup->InvalidatePhysicsData();
         BodySetup->CreatePhysicsMeshes();
+        Mesh->SetCustomizedCollision(true);
         Mesh->MarkPackageDirty();
         Mesh->PostEditChange();
-        SetStatus(TEXT("Simple collision cleared."));
+
+        Editor->RefreshTool();
+        Editor->RefreshViewport();
+        SetStatus(TEXT("All simple collision was cleared."));
     }
 
     return FReply::Handled();
@@ -299,6 +474,21 @@ void SSmartCollisionPanel::SetStatus(const FString& Message)
     if (StatusText.IsValid())
     {
         StatusText->SetText(FText::FromString(Message));
+    }
+}
+
+void SSmartCollisionPanel::UpdateSelectionSummary(
+    int32 TriangleCount,
+    int32 PointCount)
+{
+    if (SelectionText.IsValid())
+    {
+        SelectionText->SetText(FText::Format(
+            LOCTEXT(
+                "SelectionSummary",
+                "Selection: {0} triangles, {1} unique points"),
+            FText::AsNumber(TriangleCount),
+            FText::AsNumber(PointCount)));
     }
 }
 
