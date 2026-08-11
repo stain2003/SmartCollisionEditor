@@ -57,7 +57,9 @@ private:
     struct FTriangle
     {
         FVector Vertices[3];
+        FVector Normal = FVector::UpVector;
         int32 Component = INDEX_NONE;
+        int32 Surface = INDEX_NONE;
     };
 
     void BuildTriangleCache();
