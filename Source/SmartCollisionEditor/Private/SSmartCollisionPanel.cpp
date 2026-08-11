@@ -57,7 +57,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     SNew(STextBlock)
                     .Text(LOCTEXT(
                         "Instructions",
-                        "1. Start picking. 2. Click a face or connected part in the viewport. "
+                        "1. Start picking. 2. Click a surface or connected part in the viewport. "
                         "Ctrl toggles and Shift adds. 3. Choose a collision shape."))
                     .AutoWrapText(true)
                 ]
@@ -90,7 +90,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                             SetSelectionMode(ESmartCollisionSelectionMode::Face);
                         })
                         [
-                            SNew(STextBlock).Text(LOCTEXT("FaceMode", "Face"))
+                            SNew(STextBlock).Text(LOCTEXT("FaceMode", "Surface / face"))
                         ]
                     ]
                 ]
