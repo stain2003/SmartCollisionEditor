@@ -358,9 +358,9 @@ FReply SSmartCollisionPanel::SelectAll()
     else
     {
         StartPicking();
-        if (USmartCollisionSelectionTool* Tool = GetSelectionTool())
+        if (USmartCollisionSelectionTool* ActivatedTool = GetSelectionTool())
         {
-            Tool->SelectAll();
+            ActivatedTool->SelectAll();
         }
     }
     return FReply::Handled();
