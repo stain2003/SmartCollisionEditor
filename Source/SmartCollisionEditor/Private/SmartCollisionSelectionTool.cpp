@@ -24,7 +24,13 @@ namespace
 
         friend uint32 GetTypeHash(const FEdgeKey& Key)
         {
-            return HashCombineFast(::GetTypeHash(Key.A), ::GetTypeHash(Key.B));
+            const uint32 HashA = HashCombineFast(
+                HashCombineFast(::GetTypeHash(Key.A.X), ::GetTypeHash(Key.A.Y)),
+                ::GetTypeHash(Key.A.Z));
+            const uint32 HashB = HashCombineFast(
+                HashCombineFast(::GetTypeHash(Key.B.X), ::GetTypeHash(Key.B.Y)),
+                ::GetTypeHash(Key.B.Z));
+            return HashCombineFast(HashA, HashB);
         }
     };
 
