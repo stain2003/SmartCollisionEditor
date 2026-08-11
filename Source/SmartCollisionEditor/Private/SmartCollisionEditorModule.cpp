@@ -145,7 +145,7 @@ void FSmartCollisionEditorModule::HandleStaticMeshEditorOpened(
     Editor->OnStaticMeshEditorDockingExtentionTabs().AddLambda(
         [](const TSharedRef<FTabManager::FStack>& ExtensionStack)
         {
-            ExtensionStack->AddTab(SmartCollisionTabName, ETabState::OpenedTab);
+            ExtensionStack->AddTab(SmartCollisionTabName, ETabState::ClosedTab);
         });
 
     Editor->OnRegisterTabSpawners().AddLambda(
