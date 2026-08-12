@@ -1139,3 +1139,4 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
 }
 
 #undef LOCTEXT_NAMESPACE
+

@@ -550,3 +550,4 @@ void SSmartCollisionPanel::UpdateSelectionSummary(
 }
 
 #undef LOCTEXT_NAMESPACE
+

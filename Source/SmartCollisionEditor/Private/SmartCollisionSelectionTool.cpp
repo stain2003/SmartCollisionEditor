@@ -535,3 +535,4 @@ void USmartCollisionSelectionTool::NotifySelectionChanged()
     GetSelectedPoints(Points);
     SelectionChangedCallback(SelectedTriangles.Num(), Points.Num());
 }
+

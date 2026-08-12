@@ -176,6 +176,65 @@ void FSmartCollisionEditorModule::HandleStaticMeshEditorOpened(
         });
 }
 
+void FSmartCollisionEditorModule::RegisterMenus()
+{
+    FToolMenuOwnerScoped OwnerScoped(this);
+
+    UToolMenu* CollisionMenu =
+        UToolMenus::Get()->ExtendMenu(TEXT("StaticMeshEditor.Collision"));
+    if (!CollisionMenu)
+    {
+        return;
+    }
+
+    FToolMenuSection& Section = CollisionMenu->AddSection(
+        TEXT("SmartCollisionEditor"),
+        LOCTEXT("SmartCollisionSection", "Smart Collision"));
+    Section.InsertPosition = FToolMenuInsert(
+        TEXT("CollisionAutoConvexCollision"),
+        EToolMenuInsertType::After);
+
+    Section.AddDynamicEntry(
+        TEXT("OpenSmartCollisionDynamic"),
+        FNewToolMenuSectionDelegate::CreateLambda(
+            [](FToolMenuSection& InSection)
+            {
+                const UAssetEditorToolkitMenuContext* Context =
+                    InSection.FindContext<UAssetEditorToolkitMenuContext>();
+                if (!Context)
+                {
+                    return;
+                }
+
+                const TSharedPtr<FAssetEditorToolkit> Toolkit =
+                    Context->Toolkit.Pin();
+                if (!Toolkit
+                    || Toolkit->GetToolkitFName() != FName(TEXT("StaticMeshEditor")))
+                {
+                    return;
+                }
+
+                const TSharedPtr<IStaticMeshEditor> Editor =
+                    StaticCastSharedPtr<IStaticMeshEditor>(Toolkit);
+                const TWeakPtr<IStaticMeshEditor> WeakEditor = Editor;
+
+                InSection.AddMenuEntry(
+                    TEXT("OpenSmartCollision"),
+                    LOCTEXT(
+                        "OpenSmartCollisionMenuLabel",
+                        "Smart Collision (Selected Geometry)"),
+                    LOCTEXT(
+                        "OpenSmartCollisionMenuTooltip",
+                        "Open the embedded panel for selecting mesh parts or surfaces and fitting collision."),
+                    FSlateIcon(
+                        FAppStyle::GetAppStyleSetName(),
+                        TEXT("StaticMeshEditor.SetShowCollision")),
+                    FUIAction(FExecuteAction::CreateStatic(
+                        &OpenSmartCollisionTab,
+                        WeakEditor)));
+            }));
+}
+
 TSharedRef<FExtender> FSmartCollisionEditorModule::ExtendStaticMeshEditorToolbar(
     const TSharedRef<FUICommandList> CommandList,
     TSharedRef<IStaticMeshEditor> Editor)

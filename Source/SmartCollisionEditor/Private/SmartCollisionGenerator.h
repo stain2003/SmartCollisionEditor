@@ -62,3 +62,4 @@ public:
         ESmartCollisionMode Mode,
         const FSmartCollisionSettings& Settings);
 };
+

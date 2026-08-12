@@ -83,3 +83,4 @@ namespace SmartCollisionSelection
 {
     inline const FString ToolIdentifier(TEXT("SmartCollisionEditor.SelectionTool"));
 }
+

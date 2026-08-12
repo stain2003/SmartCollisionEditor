@@ -51,3 +51,4 @@ private:
     int32 MaxConvexVertices = 64;
     bool bReplaceExisting = false;
 };
+
