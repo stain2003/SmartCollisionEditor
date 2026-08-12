@@ -28,6 +28,7 @@ private:
     FReply GenerateCapsule();
     FReply GenerateSphere();
     FReply GenerateConvex();
+    FReply GenerateSurfacePatch();
     FReply ClearCollision();
 
     void SetSelectionMode(ESmartCollisionSelectionMode Mode);
