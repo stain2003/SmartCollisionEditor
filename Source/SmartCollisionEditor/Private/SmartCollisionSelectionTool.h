@@ -8,6 +8,7 @@
 class IStaticMeshEditor;
 class UStaticMesh;
 class UStaticMeshComponent;
+struct FSmartCollisionSelectionGroup;
 
 enum class ESmartCollisionSelectionMode : uint8
 {
@@ -51,6 +52,8 @@ public:
     void SelectAll();
     int32 GetSelectedTriangleCount() const { return SelectedTriangles.Num(); }
     void GetSelectedPoints(TArray<FVector>& OutPoints) const;
+    void GetSelectedGroups(
+        TArray<FSmartCollisionSelectionGroup>& OutGroups) const;
     void SetSelectionChangedCallback(TFunction<void(int32, int32)> InCallback);
 
 private:
