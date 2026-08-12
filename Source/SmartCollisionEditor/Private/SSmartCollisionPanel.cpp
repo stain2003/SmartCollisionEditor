@@ -48,8 +48,8 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     SNew(STextBlock)
                     .Text(LOCTEXT(
                         "Instructions",
-                        "1. Start picking. 2. Click a surface or connected part in the viewport. "
-                        "Ctrl toggles and Shift adds. 3. Choose a collision shape."))
+                        "1. Start picking. 2. Click to add/remove parts or surfaces; Alt+Click replaces. "
+                        "3. Auto creates a thin surface collision for face selections."))
                     .AutoWrapText(true)
                 ]
 
@@ -173,8 +173,27 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                 + SVerticalBox::Slot().AutoHeight()
                 [
                     SNew(SButton)
-                    .Text(LOCTEXT("Auto", "Auto fit selected geometry"))
+                    .Text(LOCTEXT(
+                        "Auto",
+                        "Auto fit each selected region"))
+                    .ToolTipText(LOCTEXT(
+                        "AutoTip",
+                        "Connected parts are fitted separately. Face selections become thin surface collision."))
                     .OnClicked(this, &SSmartCollisionPanel::GenerateAutomatic)
+                ]
+
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT(
+                        "SurfacePatch",
+                        "Thin surface collision"))
+                    .ToolTipText(LOCTEXT(
+                        "SurfacePatchTip",
+                        "Extrudes each selected triangle by the face thickness. Best used in Surface / face mode."))
+                    .OnClicked(
+                        this,
+                        &SSmartCollisionPanel::GenerateSurfacePatch)
                 ]
 
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
@@ -421,6 +440,12 @@ FReply SSmartCollisionPanel::GenerateConvex()
     return FReply::Handled();
 }
 
+FReply SSmartCollisionPanel::GenerateSurfacePatch()
+{
+    Generate(ESmartCollisionMode::SurfacePatch);
+    return FReply::Handled();
+}
+
 void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
 {
     const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
@@ -431,11 +456,11 @@ void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
         return;
     }
 
-    TArray<FVector> SelectedPoints;
-    Tool->GetSelectedPoints(SelectedPoints);
-    if (SelectedPoints.Num() < 3)
+    TArray<FSmartCollisionSelectionGroup> SelectedGroups;
+    Tool->GetSelectedGroups(SelectedGroups);
+    if (SelectedGroups.IsEmpty())
     {
-        SetStatus(TEXT("Select at least one triangle."));
+        SetStatus(TEXT("Select at least one surface or connected part."));
         return;
     }
 
@@ -445,9 +470,9 @@ void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
     Settings.bReplaceExisting = bReplaceExisting;
 
     const FSmartCollisionResult Result =
-        FSmartCollisionGenerator::GenerateFromPoints(
+        FSmartCollisionGenerator::GenerateFromGroups(
             Editor->GetStaticMesh(),
-            SelectedPoints,
+            SelectedGroups,
             Mode,
             Settings);
 
