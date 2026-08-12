@@ -752,10 +752,22 @@ namespace SmartCollision
     static void AddConvex(
         UBodySetup* BodySetup,
         const FPart& Part,
+        float Padding,
         int32 MaxVertices)
     {
+        TArray<FVector> ExpandedPoints = Part.Points;
+        if (Padding > 0.0f)
+        {
+            for (FVector& Point : ExpandedPoints)
+            {
+                Point += (Point - Part.Centroid).GetSafeNormal()
+                    * Padding;
+            }
+        }
+
         FKConvexElem Convex;
-        Convex.VertexData = ReduceConvexPoints(Part.Points, MaxVertices);
+        Convex.VertexData =
+            ReduceConvexPoints(ExpandedPoints, MaxVertices);
         Convex.UpdateElemBox();
         BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Convex));
     }
@@ -918,6 +930,7 @@ FSmartCollisionResult FSmartCollisionGenerator::Generate(
             AddConvex(
                 BodySetup,
                 MakeConvexPartWithThickness(Part, Settings.Padding),
+                Settings.Padding,
                 FMath::Clamp(Settings.MaxConvexVertices, 8, 256));
             ++Result.NumConvex;
             break;
@@ -1082,6 +1095,7 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
             AddConvex(
                 BodySetup,
                 MakeConvexPartWithThickness(Part, Settings.Padding),
+                Settings.Padding,
                 FMath::Clamp(Settings.MaxConvexVertices, 8, 256));
             ++Result.NumConvex;
             break;
