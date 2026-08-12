@@ -392,17 +392,237 @@ namespace SmartCollision
         const FPart& Part,
         float Padding)
     {
-        FKSphereElem Sphere;
-        Sphere.Center = Part.Center;
-
-        double Radius = 0.0;
-        for (const FVector& Point : Part.Points)
+        int32 ExtremeIndices[6] = {};
+        for (int32 Index = 1; Index < Part.Points.Num(); ++Index)
         {
-            Radius = FMath::Max(Radius, FVector::Distance(Point, Part.Center));
+            const FVector& Point = Part.Points[Index];
+            if (Point.X < Part.Points[ExtremeIndices[0]].X) ExtremeIndices[0] = Index;
+            if (Point.X > Part.Points[ExtremeIndices[1]].X) ExtremeIndices[1] = Index;
+            if (Point.Y < Part.Points[ExtremeIndices[2]].Y) ExtremeIndices[2] = Index;
+            if (Point.Y > Part.Points[ExtremeIndices[3]].Y) ExtremeIndices[3] = Index;
+            if (Point.Z < Part.Points[ExtremeIndices[4]].Z) ExtremeIndices[4] = Index;
+            if (Point.Z > Part.Points[ExtremeIndices[5]].Z) ExtremeIndices[5] = Index;
         }
 
+        int32 PairA = ExtremeIndices[0];
+        int32 PairB = ExtremeIndices[1];
+        double LargestDistance = FVector::DistSquared(
+            Part.Points[PairA],
+            Part.Points[PairB]);
+
+        for (int32 AxisIndex = 1; AxisIndex < 3; ++AxisIndex)
+        {
+            const int32 A = ExtremeIndices[AxisIndex * 2];
+            const int32 B = ExtremeIndices[AxisIndex * 2 + 1];
+            const double Distance = FVector::DistSquared(
+                Part.Points[A],
+                Part.Points[B]);
+            if (Distance > LargestDistance)
+            {
+                LargestDistance = Distance;
+                PairA = A;
+                PairB = B;
+            }
+        }
+
+        FVector Center =
+            (Part.Points[PairA] + Part.Points[PairB]) * 0.5;
+        double Radius = FMath::Sqrt(LargestDistance) * 0.5;
+
+        for (const FVector& Point : Part.Points)
+        {
+            const double Distance = FVector::Distance(Point, Center);
+            if (Distance > Radius && Distance > UE_DOUBLE_SMALL_NUMBER)
+            {
+                const double NewRadius = (Radius + Distance) * 0.5;
+                Center += (Point - Center)
+                    * ((NewRadius - Radius) / Distance);
+                Radius = NewRadius;
+            }
+        }
+
+        FKSphereElem Sphere;
+        Sphere.Center = Center;
         Sphere.Radius = FMath::Max(0.05, Radius + Padding);
         BodySetup->AggGeom.SphereElems.Add(Sphere);
+    }
+
+    struct FSurfaceHullPoint
+    {
+        FVector Position;
+        FVector2D Projected;
+    };
+
+    static double Cross2D(
+        const FVector2D& O,
+        const FVector2D& A,
+        const FVector2D& B)
+    {
+        return (A.X - O.X) * (B.Y - O.Y)
+            - (A.Y - O.Y) * (B.X - O.X);
+    }
+
+    static bool BuildSurfaceHull(
+        const FSmartCollisionSelectionGroup& Group,
+        TArray<FVector>& OutHull,
+        FVector& OutNormal)
+    {
+        OutHull.Reset();
+        OutNormal = FVector::ZeroVector;
+
+        for (int32 Index = 0;
+             Index + 2 < Group.TriangleVertices.Num();
+             Index += 3)
+        {
+            OutNormal += FVector::CrossProduct(
+                Group.TriangleVertices[Index + 1]
+                    - Group.TriangleVertices[Index],
+                Group.TriangleVertices[Index + 2]
+                    - Group.TriangleVertices[Index]);
+        }
+        OutNormal.Normalize();
+        if (OutNormal.IsNearlyZero() || Group.Points.Num() < 3)
+        {
+            return false;
+        }
+
+        FVector BasisX = FVector::CrossProduct(
+            FMath::Abs(OutNormal.Z) < 0.9
+                ? FVector::UpVector
+                : FVector::RightVector,
+            OutNormal).GetSafeNormal();
+        const FVector BasisY =
+            FVector::CrossProduct(OutNormal, BasisX).GetSafeNormal();
+
+        TArray<FSurfaceHullPoint> Points;
+        Points.Reserve(Group.Points.Num());
+        for (const FVector& Point : Group.Points)
+        {
+            FSurfaceHullPoint& HullPoint =
+                Points.AddDefaulted_GetRef();
+            HullPoint.Position = Point;
+            HullPoint.Projected = FVector2D(
+                FVector::DotProduct(Point, BasisX),
+                FVector::DotProduct(Point, BasisY));
+        }
+
+        Points.Sort(
+            [](const FSurfaceHullPoint& A, const FSurfaceHullPoint& B)
+            {
+                return A.Projected.X != B.Projected.X
+                    ? A.Projected.X < B.Projected.X
+                    : A.Projected.Y < B.Projected.Y;
+            });
+
+        TArray<int32> HullIndices;
+        HullIndices.Reserve(Points.Num() * 2);
+
+        for (int32 Index = 0; Index < Points.Num(); ++Index)
+        {
+            while (HullIndices.Num() >= 2
+                && Cross2D(
+                    Points[HullIndices[HullIndices.Num() - 2]].Projected,
+                    Points[HullIndices.Last()].Projected,
+                    Points[Index].Projected) <= 0.0)
+            {
+                HullIndices.Pop(EAllowShrinking::No);
+            }
+            HullIndices.Add(Index);
+        }
+
+        const int32 LowerCount = HullIndices.Num();
+        for (int32 Index = Points.Num() - 2; Index >= 0; --Index)
+        {
+            while (HullIndices.Num() > LowerCount
+                && Cross2D(
+                    Points[HullIndices[HullIndices.Num() - 2]].Projected,
+                    Points[HullIndices.Last()].Projected,
+                    Points[Index].Projected) <= 0.0)
+            {
+                HullIndices.Pop(EAllowShrinking::No);
+            }
+            HullIndices.Add(Index);
+        }
+
+        if (HullIndices.Num() > 1)
+        {
+            HullIndices.Pop(EAllowShrinking::No);
+        }
+        if (HullIndices.Num() < 3)
+        {
+            return false;
+        }
+
+        double HullAreaTwice = 0.0;
+        for (int32 Index = 0; Index < HullIndices.Num(); ++Index)
+        {
+            const FVector2D& A =
+                Points[HullIndices[Index]].Projected;
+            const FVector2D& B =
+                Points[HullIndices[
+                    (Index + 1) % HullIndices.Num()]].Projected;
+            HullAreaTwice += A.X * B.Y - A.Y * B.X;
+        }
+        HullAreaTwice = FMath::Abs(HullAreaTwice);
+
+        double TriangleAreaTwice = 0.0;
+        for (int32 Index = 0;
+             Index + 2 < Group.TriangleVertices.Num();
+             Index += 3)
+        {
+            const FVector2D A(
+                FVector::DotProduct(
+                    Group.TriangleVertices[Index],
+                    BasisX),
+                FVector::DotProduct(
+                    Group.TriangleVertices[Index],
+                    BasisY));
+            const FVector2D B(
+                FVector::DotProduct(
+                    Group.TriangleVertices[Index + 1],
+                    BasisX),
+                FVector::DotProduct(
+                    Group.TriangleVertices[Index + 1],
+                    BasisY));
+            const FVector2D C(
+                FVector::DotProduct(
+                    Group.TriangleVertices[Index + 2],
+                    BasisX),
+                FVector::DotProduct(
+                    Group.TriangleVertices[Index + 2],
+                    BasisY));
+            TriangleAreaTwice += FMath::Abs(Cross2D(A, B, C));
+        }
+
+        if (HullAreaTwice <= UE_DOUBLE_SMALL_NUMBER
+            || TriangleAreaTwice / HullAreaTwice < 0.96)
+        {
+            return false;
+        }
+
+        OutHull.Reserve(HullIndices.Num());
+        for (const int32 Index : HullIndices)
+        {
+            OutHull.Add(Points[Index].Position);
+        }
+        return true;
+    }
+
+    static void AddThinConvexFromPolygon(
+        UBodySetup* BodySetup,
+        const TArray<FVector>& Polygon,
+        const FVector& Normal,
+        double HalfThickness)
+    {
+        FKConvexElem Convex;
+        Convex.VertexData.Reserve(Polygon.Num() * 2);
+        for (const FVector& Point : Polygon)
+        {
+            Convex.VertexData.Add(Point + Normal * HalfThickness);
+            Convex.VertexData.Add(Point - Normal * HalfThickness);
+        }
+        Convex.UpdateElemBox();
+        BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Convex));
     }
 
     static int32 AddSurfacePatch(
@@ -411,18 +631,38 @@ namespace SmartCollision
         float Thickness,
         int32 ShapeBudget)
     {
+        if (ShapeBudget <= 0)
+        {
+            return 0;
+        }
+
         const double HalfThickness =
             FMath::Max(0.05, static_cast<double>(Thickness) * 0.5);
+
+        TArray<FVector> ConvexHull;
+        FVector SurfaceNormal;
+        if (BuildSurfaceHull(Group, ConvexHull, SurfaceNormal))
+        {
+            AddThinConvexFromPolygon(
+                BodySetup,
+                ConvexHull,
+                SurfaceNormal,
+                HalfThickness);
+            return 1;
+        }
+
         const int32 TriangleCount = Group.TriangleVertices.Num() / 3;
         int32 Added = 0;
-
         for (int32 TriangleIndex = 0;
              TriangleIndex < TriangleCount && Added < ShapeBudget;
              ++TriangleIndex)
         {
-            const FVector A = Group.TriangleVertices[TriangleIndex * 3];
-            const FVector B = Group.TriangleVertices[TriangleIndex * 3 + 1];
-            const FVector C = Group.TriangleVertices[TriangleIndex * 3 + 2];
+            const FVector A =
+                Group.TriangleVertices[TriangleIndex * 3];
+            const FVector B =
+                Group.TriangleVertices[TriangleIndex * 3 + 1];
+            const FVector C =
+                Group.TriangleVertices[TriangleIndex * 3 + 2];
             const FVector Normal =
                 FVector::CrossProduct(B - A, C - A).GetSafeNormal();
 
@@ -431,16 +671,16 @@ namespace SmartCollision
                 continue;
             }
 
-            FKConvexElem Convex;
-            Convex.VertexData.Reserve(6);
-            Convex.VertexData.Add(A + Normal * HalfThickness);
-            Convex.VertexData.Add(B + Normal * HalfThickness);
-            Convex.VertexData.Add(C + Normal * HalfThickness);
-            Convex.VertexData.Add(A - Normal * HalfThickness);
-            Convex.VertexData.Add(B - Normal * HalfThickness);
-            Convex.VertexData.Add(C - Normal * HalfThickness);
-            Convex.UpdateElemBox();
-            BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Convex));
+            TArray<FVector> Triangle;
+            Triangle.Reserve(3);
+            Triangle.Add(A);
+            Triangle.Add(B);
+            Triangle.Add(C);
+            AddThinConvexFromPolygon(
+                BodySetup,
+                Triangle,
+                Normal,
+                HalfThickness);
             ++Added;
         }
 
