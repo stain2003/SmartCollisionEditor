@@ -1,5 +1,6 @@
 #include "SmartCollisionSelectionTool.h"
 
+#include "SmartCollisionGenerator.h"
 #include "Engine/StaticMesh.h"
 #include "IStaticMeshEditor.h"
 #include "InteractiveToolManager.h"
@@ -146,7 +147,7 @@ void USmartCollisionSelectionTool::Setup()
     BuildTriangleCache();
     GetToolManager()->DisplayMessage(
         NSLOCTEXT("SmartCollisionEditor", "SelectionToolMessage",
-            "Click a surface to select it. Connected Part mode selects the complete topology island. Ctrl toggles; Shift adds."),
+            "Click to add or remove a surface/part. Alt+Click replaces the selection. Multi-selection is fitted per region."),
         EToolMessageLevel::UserNotification);
 }
 
@@ -307,8 +308,7 @@ void USmartCollisionSelectionTool::OnClicked(const FInputDeviceRay& ClickPos)
     }
 
     const FModifierKeysState Modifiers = FSlateApplication::Get().GetModifierKeys();
-    const bool bToggle = Modifiers.IsControlDown();
-    const bool bAdd = Modifiers.IsShiftDown() || bToggle;
+    const bool bReplace = Modifiers.IsAltDown();
 
     TArray<int32> ClickedSet;
     if (SelectionMode == ESmartCollisionSelectionMode::ConnectedPart)
@@ -334,21 +334,18 @@ void USmartCollisionSelectionTool::OnClicked(const FInputDeviceRay& ClickPos)
         }
     }
 
-    if (!bAdd)
+    if (bReplace)
     {
         SelectedTriangles.Reset();
     }
 
-    bool bRemove = bToggle;
-    if (bToggle)
+    bool bRemove = !bReplace;
+    for (const int32 TriangleIndex : ClickedSet)
     {
-        for (const int32 TriangleIndex : ClickedSet)
+        if (!SelectedTriangles.Contains(TriangleIndex))
         {
-            if (!SelectedTriangles.Contains(TriangleIndex))
-            {
-                bRemove = false;
-                break;
-            }
+            bRemove = false;
+            break;
         }
     }
 
@@ -457,6 +454,67 @@ void USmartCollisionSelectionTool::GetSelectedPoints(TArray<FVector>& OutPoints)
             }
         }
     }
+}
+
+void USmartCollisionSelectionTool::GetSelectedGroups(
+    TArray<FSmartCollisionSelectionGroup>& OutGroups) const
+{
+    OutGroups.Reset();
+
+    TMap<int32, int32> GroupToOutput;
+    const bool bSurfaceMode =
+        SelectionMode == ESmartCollisionSelectionMode::Face;
+
+    for (const int32 TriangleIndex : SelectedTriangles)
+    {
+        if (!Triangles.IsValidIndex(TriangleIndex))
+        {
+            continue;
+        }
+
+        const FTriangle& Triangle = Triangles[TriangleIndex];
+        const int32 GroupId =
+            bSurfaceMode ? Triangle.Surface : Triangle.Component;
+
+        int32* ExistingIndex = GroupToOutput.Find(GroupId);
+        int32 OutputIndex = INDEX_NONE;
+        if (ExistingIndex)
+        {
+            OutputIndex = *ExistingIndex;
+        }
+        else
+        {
+            OutputIndex = OutGroups.AddDefaulted();
+            GroupToOutput.Add(GroupId, OutputIndex);
+            OutGroups[OutputIndex].bSurfacePatch = bSurfaceMode;
+        }
+
+        FSmartCollisionSelectionGroup& Group = OutGroups[OutputIndex];
+        for (int32 Corner = 0; Corner < 3; ++Corner)
+        {
+            Group.TriangleVertices.Add(Triangle.Vertices[Corner]);
+        }
+    }
+
+    for (FSmartCollisionSelectionGroup& Group : OutGroups)
+    {
+        TSet<FIntVector> UniquePositions;
+        for (const FVector& Point : Group.TriangleVertices)
+        {
+            const FIntVector Key = QuantizePosition(Point);
+            if (!UniquePositions.Contains(Key))
+            {
+                UniquePositions.Add(Key);
+                Group.Points.Add(Point);
+            }
+        }
+    }
+
+    OutGroups.RemoveAll(
+        [](const FSmartCollisionSelectionGroup& Group)
+        {
+            return Group.Points.Num() < 3;
+        });
 }
 
 void USmartCollisionSelectionTool::SetSelectionChangedCallback(
