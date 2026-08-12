@@ -190,7 +190,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                         "Thin surface collision"))
                     .ToolTipText(LOCTEXT(
                         "SurfacePatchTip",
-                        "Extrudes each selected triangle by the face thickness. Best used in Surface / face mode."))
+                        "Builds thin convex patches that follow each selected face region."))
                     .OnClicked(
                         this,
                         &SSmartCollisionPanel::GenerateSurfacePatch)
@@ -448,6 +448,13 @@ FReply SSmartCollisionPanel::GenerateSurfacePatch()
 
 void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
 {
+    if (Mode == ESmartCollisionMode::SurfacePatch
+        && SelectionMode != ESmartCollisionSelectionMode::Face)
+    {
+        SetStatus(TEXT("Switch to Surface / face mode before creating thin surface collision."));
+        return;
+    }
+
     const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
     USmartCollisionSelectionTool* Tool = GetSelectionTool();
     if (!Editor || !Tool)
