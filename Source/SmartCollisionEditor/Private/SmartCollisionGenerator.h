@@ -10,7 +10,8 @@ enum class ESmartCollisionMode : uint8
     OrientedBox,
     Capsule,
     Sphere,
-    Convex
+    Convex,
+    SurfacePatch
 };
 
 struct FSmartCollisionSettings
@@ -20,6 +21,13 @@ struct FSmartCollisionSettings
     int32 MaxShapes = 256;
     int32 MaxConvexVertices = 64;
     bool bReplaceExisting = true;
+};
+
+struct FSmartCollisionSelectionGroup
+{
+    bool bSurfacePatch = false;
+    TArray<FVector> Points;
+    TArray<FVector> TriangleVertices;
 };
 
 struct FSmartCollisionResult
@@ -45,6 +53,12 @@ public:
     static FSmartCollisionResult GenerateFromPoints(
         UStaticMesh* StaticMesh,
         const TArray<FVector>& SelectedPoints,
+        ESmartCollisionMode Mode,
+        const FSmartCollisionSettings& Settings);
+
+    static FSmartCollisionResult GenerateFromGroups(
+        UStaticMesh* StaticMesh,
+        const TArray<FSmartCollisionSelectionGroup>& SelectionGroups,
         ESmartCollisionMode Mode,
         const FSmartCollisionSettings& Settings);
 };
