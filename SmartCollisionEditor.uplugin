@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 2,
-  "VersionName": "0.2.0",
+  "Version": 3,
+  "VersionName": "0.2.1",
   "FriendlyName": "Smart Collision Editor",
-  "Description": "Select connected parts or planar face regions inside the Static Mesh Editor and fit standard Unreal collision primitives around the selection.",
+  "Description": "Multi-select connected parts or face regions in the Static Mesh Editor and generate tight per-region primitives or thin surface collision."
   "Category": "Editor",
   "CreatedBy": "fuyutianji",
   "CanContainContent": false,
