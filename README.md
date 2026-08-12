@@ -4,6 +4,16 @@ An Unreal Engine 5.8.1 editor plugin for interactively fitting simple collision 
 
 > V2 is under development on `feature/interactive-selection-v2`. The stable V1 implementation remains on `main`.
 
+## V2.1 selection and fitting
+
+- Ordinary click toggles a connected part or surface region, so multi-selection does not depend on Shift/Ctrl.
+- **Alt + Click** replaces the entire selection with the clicked region.
+- Multiple connected parts are kept as separate groups and receive separate collision shapes.
+- In **Surface / face** mode, **Auto** creates thin collision following the selected surface instead of a box.
+- Convex planar regions are merged into one thin convex shell; concave regions fall back to multiple thin triangle prisms to preserve holes and indentations.
+- Box fitting compares PCA orientation with the mesh axes and keeps the tighter result.
+- Capsule, sphere, and convex fitting use tighter geometry-based bounds.
+
 ## V2 workflow
 
 1. Double-click a Static Mesh asset.
@@ -12,7 +22,7 @@ An Unreal Engine 5.8.1 editor plugin for interactively fitting simple collision 
    - **Connected part** selects the complete edge-connected topology island under the cursor.
    - **Surface / face** selects the connected, approximately coplanar surface under the cursor.
 4. Click **Start viewport picking**.
-5. Click geometry in the native viewport. **Shift** adds to the selection; **Ctrl** toggles it.
+5. Click geometry in the native viewport. ordinary clicks add/remove regions; **Alt + Click** replaces the selection.
 6. Fit **Auto**, **Box**, **Capsule**, **Sphere**, or **Convex hull** around only the selected geometry.
 7. Leave **Replace all existing collision** disabled to build collision one selected region at a time.
 8. Inspect the standard simple collision overlay and save the Static Mesh asset.
@@ -71,7 +81,7 @@ If the plugin was previously built, close Unreal and delete only the plugin's ge
 - Selection operates on render LOD0.
 - Connected-part detection uses shared quantized edges. Parts that only touch at a point normally remain separate.
 - Surface selection expands across shared edges whose triangle normals differ by no more than five degrees.
-- **Shift** can combine multiple parts or surfaces into one fitted collision shape.
+- Multiple clicks select several parts or surfaces. Each selected region is fitted separately.
 - The current preview outlines selected triangle edges; a translucent filled highlight is a possible follow-up.
 - Always inspect convex cooking before using the mesh for physics simulation.
 
