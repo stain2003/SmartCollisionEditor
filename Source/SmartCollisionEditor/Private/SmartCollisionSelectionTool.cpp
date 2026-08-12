@@ -216,9 +216,9 @@ void USmartCollisionSelectionTool::BuildTriangleCache()
             if (const int32* Existing = FirstTriangleAtEdge.Find(Edge))
             {
                 ComponentSets.Union(TriangleIndex, *Existing);
-                const double NormalDot = FMath::Abs(FVector::DotProduct(
+                const double NormalDot = FVector::DotProduct(
                     Triangle.Normal,
-                    Triangles[*Existing].Normal));
+                    Triangles[*Existing].Normal);
                 if (NormalDot >= CoplanarNormalDot)
                 {
                     SurfaceSets.Union(TriangleIndex, *Existing);
