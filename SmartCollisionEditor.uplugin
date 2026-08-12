@@ -3,7 +3,7 @@
   "Version": 3,
   "VersionName": "0.2.1",
   "FriendlyName": "Smart Collision Editor",
-  "Description": "Multi-select connected parts or face regions in the Static Mesh Editor and generate tight per-region primitives or thin surface collision."
+  "Description": "Multi-select connected parts or face regions in the Static Mesh Editor and generate tight per-region primitives or thin surface collision.",
   "Category": "Editor",
   "CreatedBy": "fuyutianji",
   "CanContainContent": false,
