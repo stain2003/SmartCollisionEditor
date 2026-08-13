@@ -163,6 +163,45 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     .OnValueChanged_Lambda([this](int32 Value) { MaxConvexVertices = Value; })
                 ]
 
+                + SVerticalBox::Slot().AutoHeight()
+                [
+                    SNew(STextBlock).Text(LOCTEXT(
+                        "MaxConvexHulls",
+                        "Smart decomposition: maximum hulls"))
+                ]
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 6)
+                [
+                    SNew(SNumericEntryBox<int32>)
+                    .MinValue(1)
+                    .MaxValue(64)
+                    .Value_Lambda([this] { return MaxConvexHulls; })
+                    .OnValueChanged_Lambda([this](int32 Value)
+                    {
+                        MaxConvexHulls = Value;
+                    })
+                ]
+
+                + SVerticalBox::Slot().AutoHeight()
+                [
+                    SNew(STextBlock).Text(LOCTEXT(
+                        "DecompositionResolution",
+                        "Smart decomposition resolution"))
+                ]
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 6)
+                [
+                    SNew(SNumericEntryBox<int32>)
+                    .MinValue(10000)
+                    .MaxValue(16000000)
+                    .Value_Lambda([this]
+                    {
+                        return ConvexDecompositionResolution;
+                    })
+                    .OnValueChanged_Lambda([this](int32 Value)
+                    {
+                        ConvexDecompositionResolution = Value;
+                    })
+                ]
+
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 8)
                 [
                     SNew(SCheckBox)
@@ -295,6 +334,20 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     SNew(SButton)
                     .Text(LOCTEXT("Convex", "Convex hull"))
                     .OnClicked(this, &SSmartCollisionPanel::GenerateConvex)
+                ]
+
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT(
+                        "MultiConvex",
+                        "Smart multi-convex (irregular shapes)"))
+                    .ToolTipText(LOCTEXT(
+                        "MultiConvexTip",
+                        "Uses UE VHACD to split irregular selected geometry into a small set of tight convex collision hulls. Surface selections fall back to thin collision."))
+                    .OnClicked(
+                        this,
+                        &SSmartCollisionPanel::GenerateMultiConvex)
                 ]
 
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
@@ -555,6 +608,12 @@ FReply SSmartCollisionPanel::GenerateConvex()
     return FReply::Handled();
 }
 
+FReply SSmartCollisionPanel::GenerateMultiConvex()
+{
+    Generate(ESmartCollisionMode::MultiConvex);
+    return FReply::Handled();
+}
+
 FReply SSmartCollisionPanel::GenerateSurfacePatch()
 {
     Generate(ESmartCollisionMode::SurfacePatch);
@@ -597,6 +656,9 @@ void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
     FSmartCollisionSettings Settings;
     Settings.Padding = Padding;
     Settings.MaxConvexVertices = MaxConvexVertices;
+    Settings.MaxConvexHulls = MaxConvexHulls;
+    Settings.ConvexDecompositionResolution =
+        ConvexDecompositionResolution;
     Settings.bReplaceExisting = bReplaceExisting;
     Settings.bMergeSelection = bMergeSelection;
 
