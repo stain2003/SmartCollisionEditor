@@ -4,11 +4,12 @@ An Unreal Engine 5.8.1 editor plugin for interactively fitting simple collision 
 
 > V2 is under development on `feature/interactive-selection-v2`. The stable V1 implementation remains on `main`.
 
-## V2.1 selection and fitting
+## V3 selection and fitting
 
 - Ordinary click toggles a connected part or surface region, so multi-selection does not depend on Shift/Ctrl.
 - **Alt + Click** replaces the entire selection with the clicked region.
-- Multiple connected parts are kept as separate groups and receive separate collision shapes.
+- Choose **One per selected region** to create collision separately for every selected part/surface, or **Merge selection into one** to create one collision shape around the complete selection.
+- **Stop viewport picking** pauses picking while preserving the selection for generation; restarting picking restores the cached highlight.
 - In **Surface / face** mode, **Auto** creates thin collision following the selected surface instead of a box.
 - Convex planar regions are merged into one thin convex shell; concave regions fall back to multiple thin triangle prisms to preserve holes and indentations.
 - Box fitting compares PCA orientation with the mesh axes and keeps the tighter result.
@@ -23,9 +24,11 @@ An Unreal Engine 5.8.1 editor plugin for interactively fitting simple collision 
    - **Surface / face** selects the connected, approximately coplanar surface under the cursor.
 4. Click **Start viewport picking**.
 5. Click geometry in the native viewport. ordinary clicks add/remove regions; **Alt + Click** replaces the selection.
-6. Fit **Auto**, **Box**, **Capsule**, **Sphere**, or **Convex hull** around only the selected geometry.
-7. Leave **Replace all existing collision** disabled to build collision one selected region at a time.
-8. Inspect the standard simple collision overlay and save the Static Mesh asset.
+6. Choose **One per selected region** or **Merge selection into one**.
+7. Fit **Auto**, **Thin surface collision**, **Box**, **Capsule**, **Sphere**, or **Convex hull** around only the selected geometry.
+8. Leave **Replace all existing collision** disabled to preserve existing shapes.
+9. Click **Stop viewport picking** when you want normal viewport interaction without losing the current selection.
+10. Inspect the standard simple collision overlay and save the Static Mesh asset.
 
 Selected triangles are outlined in orange. The generated shapes are stored in the mesh's standard `UBodySetup::AggGeom`, participate in Undo/Redo, and require no runtime module.
 
@@ -81,7 +84,7 @@ If the plugin was previously built, close Unreal and delete only the plugin's ge
 - Selection operates on render LOD0.
 - Connected-part detection uses shared quantized edges. Parts that only touch at a point normally remain separate.
 - Surface selection expands across shared edges whose triangle normals differ by no more than five degrees.
-- Multiple clicks select several parts or surfaces. Each selected region is fitted separately.
+- Multiple clicks select several parts or surfaces. Generation can fit each region separately or merge all selected geometry into one collision shape.
 - The current preview outlines selected triangle edges; a translucent filled highlight is a possible follow-up.
 - Always inspect convex cooking before using the mesh for physics simulation.
 
