@@ -398,20 +398,30 @@ FReply SSmartCollisionPanel::StartPicking()
         return FReply::Handled();
     }
 
-    if (ToolManager->GetActiveToolType(EToolSide::Left)
-        != SmartCollisionSelection::ToolIdentifier)
+    const bool bSmartCollisionAlreadyActive =
+        ToolManager->HasActiveTool(EToolSide::Left)
+        && ToolManager->GetActiveToolType(EToolSide::Left)
+            == SmartCollisionSelection::ToolIdentifier;
+
+    if (!bSmartCollisionAlreadyActive)
     {
         if (ToolManager->HasActiveTool(EToolSide::Left))
         {
-            ToolManager->DeactivateTool(EToolSide::Left, EToolShutdownType::Cancel);
+            ToolManager->DeactivateTool(
+                EToolSide::Left,
+                EToolShutdownType::Cancel);
         }
 
-        if (!ToolManager->SelectActiveToolType(
+        // After StopPicking the tool type may remain selected even though
+        // there is no active tool. SelectActiveToolType can return false in
+        // that state, so activation is the authoritative restart check.
+        ToolManager->SelectActiveToolType(
             EToolSide::Left,
-            SmartCollisionSelection::ToolIdentifier)
-            || !ToolManager->ActivateTool(EToolSide::Left))
+            SmartCollisionSelection::ToolIdentifier);
+
+        if (!ToolManager->ActivateTool(EToolSide::Left))
         {
-            SetStatus(TEXT("Unable to activate viewport picking."));
+            SetStatus(TEXT("Unable to restart viewport picking."));
             return FReply::Handled();
         }
     }
