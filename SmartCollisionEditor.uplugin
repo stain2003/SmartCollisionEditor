@@ -1,7 +1,7 @@
 {
   "FileVersion": 3,
-  "Version": 4,
-  "VersionName": "0.3.0",
+  "Version": 5,
+  "VersionName": "0.3.1",
   "FriendlyName": "Smart Collision Editor",
   "Description": "Multi-select connected parts or face regions, generate collision per region or as one merged shape, and pause viewport picking without losing the selection.",
   "Category": "Editor",
