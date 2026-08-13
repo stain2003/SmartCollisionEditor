@@ -11,6 +11,7 @@ enum class ESmartCollisionMode : uint8
     Capsule,
     Sphere,
     Convex,
+    MultiConvex,
     SurfacePatch
 };
 
@@ -20,6 +21,8 @@ struct FSmartCollisionSettings
     float MinimumPartSize = 1.0f;
     int32 MaxShapes = 256;
     int32 MaxConvexVertices = 64;
+    int32 MaxConvexHulls = 8;
+    int32 ConvexDecompositionResolution = 100000;
     bool bReplaceExisting = true;
     bool bMergeSelection = false;
 };
