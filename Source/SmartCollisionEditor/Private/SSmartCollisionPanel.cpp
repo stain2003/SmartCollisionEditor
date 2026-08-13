@@ -88,12 +88,25 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
 
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
                 [
-                    SNew(SButton)
-                    .Text(LOCTEXT("StartPicking", "Start viewport picking"))
-                    .ToolTipText(LOCTEXT(
-                        "StartPickingTip",
-                        "Activates face picking inside this Static Mesh Editor viewport."))
-                    .OnClicked(this, &SSmartCollisionPanel::StartPicking)
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot().FillWidth(1)
+                    [
+                        SNew(SButton)
+                        .Text(LOCTEXT("StartPicking", "Start viewport picking"))
+                        .ToolTipText(LOCTEXT(
+                            "StartPickingTip",
+                            "Activates geometry picking inside this Static Mesh Editor viewport."))
+                        .OnClicked(this, &SSmartCollisionPanel::StartPicking)
+                    ]
+                    + SHorizontalBox::Slot().FillWidth(1).Padding(4, 0, 0, 0)
+                    [
+                        SNew(SButton)
+                        .Text(LOCTEXT("StopPicking", "Stop viewport picking"))
+                        .ToolTipText(LOCTEXT(
+                            "StopPickingTip",
+                            "Stops viewport picking but keeps the current selection available for collision generation."))
+                        .OnClicked(this, &SSmartCollisionPanel::StopPicking)
+                    ]
                 ]
 
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
@@ -170,12 +183,70 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     ]
                 ]
 
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 8)
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("GroupingTitle", "Generation grouping"))
+                    .Font(FAppStyle::GetFontStyle(TEXT("BoldFont")))
+                ]
+
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+                [
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot().FillWidth(1)
+                    [
+                        SNew(SCheckBox)
+                        .Style(FAppStyle::Get(), TEXT("RadioButton"))
+                        .IsChecked_Lambda([this]
+                        {
+                            return !bMergeSelection
+                                ? ECheckBoxState::Checked
+                                : ECheckBoxState::Unchecked;
+                        })
+                        .OnCheckStateChanged_Lambda([this](ECheckBoxState State)
+                        {
+                            if (State == ECheckBoxState::Checked)
+                            {
+                                bMergeSelection = false;
+                            }
+                        })
+                        [
+                            SNew(STextBlock).Text(LOCTEXT(
+                                "SeparateRegions",
+                                "One per selected region"))
+                        ]
+                    ]
+                    + SHorizontalBox::Slot().FillWidth(1).Padding(4, 0, 0, 0)
+                    [
+                        SNew(SCheckBox)
+                        .Style(FAppStyle::Get(), TEXT("RadioButton"))
+                        .IsChecked_Lambda([this]
+                        {
+                            return bMergeSelection
+                                ? ECheckBoxState::Checked
+                                : ECheckBoxState::Unchecked;
+                        })
+                        .OnCheckStateChanged_Lambda([this](ECheckBoxState State)
+                        {
+                            if (State == ECheckBoxState::Checked)
+                            {
+                                bMergeSelection = true;
+                            }
+                        })
+                        [
+                            SNew(STextBlock).Text(LOCTEXT(
+                                "MergeRegions",
+                                "Merge selection into one"))
+                        ]
+                    ]
+                ]
+
                 + SVerticalBox::Slot().AutoHeight()
                 [
                     SNew(SButton)
                     .Text(LOCTEXT(
                         "Auto",
-                        "Auto fit each selected region"))
+                        "Auto fit selected geometry"))
                     .ToolTipText(LOCTEXT(
                         "AutoTip",
                         "Connected parts are fitted separately. Face selections become thin surface collision."))
@@ -348,6 +419,11 @@ FReply SSmartCollisionPanel::StartPicking()
     if (USmartCollisionSelectionTool* Tool = GetSelectionTool())
     {
         Tool->SetSelectionMode(SelectionMode);
+        if (!CachedSelectedTriangleIndices.IsEmpty())
+        {
+            Tool->SetSelectedTriangleIndices(
+                CachedSelectedTriangleIndices);
+        }
         const TWeakPtr<SSmartCollisionPanel> WeakThis = SharedThis(this);
         Tool->SetSelectionChangedCallback(
             [WeakThis](int32 TriangleCount, int32 PointCount)
@@ -360,6 +436,35 @@ FReply SSmartCollisionPanel::StartPicking()
         SetStatus(TEXT("Picking is active. Click geometry in the viewport."));
     }
 
+    return FReply::Handled();
+}
+
+void SSmartCollisionPanel::CacheSelectionFromTool()
+{
+    if (USmartCollisionSelectionTool* Tool = GetSelectionTool())
+    {
+        Tool->GetSelectedTriangleIndices(
+            CachedSelectedTriangleIndices);
+        Tool->GetSelectedGroups(CachedSelectionGroups);
+    }
+}
+
+FReply SSmartCollisionPanel::StopPicking()
+{
+    UInteractiveToolManager* ToolManager = GetToolManager();
+    if (!ToolManager
+        || ToolManager->GetActiveToolType(EToolSide::Left)
+            != SmartCollisionSelection::ToolIdentifier)
+    {
+        SetStatus(TEXT("Viewport picking is not active."));
+        return FReply::Handled();
+    }
+
+    CacheSelectionFromTool();
+    ToolManager->DeactivateTool(
+        EToolSide::Left,
+        EToolShutdownType::Accept);
+    SetStatus(TEXT("Picking stopped. The cached selection is ready for collision generation."));
     return FReply::Handled();
 }
 
@@ -457,14 +562,22 @@ void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
 
     const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
     USmartCollisionSelectionTool* Tool = GetSelectionTool();
-    if (!Editor || !Tool)
+    if (!Editor)
     {
-        SetStatus(TEXT("Start viewport picking and select geometry first."));
+        SetStatus(TEXT("The Static Mesh Editor has no active mesh."));
         return;
     }
 
     TArray<FSmartCollisionSelectionGroup> SelectedGroups;
-    Tool->GetSelectedGroups(SelectedGroups);
+    if (Tool)
+    {
+        CacheSelectionFromTool();
+        SelectedGroups = CachedSelectionGroups;
+    }
+    else
+    {
+        SelectedGroups = CachedSelectionGroups;
+    }
     if (SelectedGroups.IsEmpty())
     {
         SetStatus(TEXT("Select at least one surface or connected part."));
@@ -475,6 +588,7 @@ void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
     Settings.Padding = Padding;
     Settings.MaxConvexVertices = MaxConvexVertices;
     Settings.bReplaceExisting = bReplaceExisting;
+    Settings.bMergeSelection = bMergeSelection;
 
     const FSmartCollisionResult Result =
         FSmartCollisionGenerator::GenerateFromGroups(
