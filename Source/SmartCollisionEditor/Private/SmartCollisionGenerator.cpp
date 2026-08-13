@@ -1,5 +1,6 @@
 #include "SmartCollisionGenerator.h"
 
+#include "ConvexDecompTool.h"
 #include "Engine/StaticMesh.h"
 #include "MeshDescription.h"
 #include "PhysicsEngine/AggregateGeom.h"
@@ -687,6 +688,79 @@ namespace SmartCollision
         return Added;
     }
 
+    static bool BuildIndexedMesh(
+        const FSmartCollisionSelectionGroup& Group,
+        TArray<FVector3f>& OutVertices,
+        TArray<uint32>& OutIndices)
+    {
+        OutVertices.Reset();
+        OutIndices.Reset();
+
+        TMap<FIntVector, uint32> PositionToIndex;
+        constexpr double PositionScale = 100.0;
+
+        for (const FVector& Point : Group.TriangleVertices)
+        {
+            const FIntVector Key(
+                FMath::RoundToInt(Point.X * PositionScale),
+                FMath::RoundToInt(Point.Y * PositionScale),
+                FMath::RoundToInt(Point.Z * PositionScale));
+
+            uint32* ExistingIndex = PositionToIndex.Find(Key);
+            if (ExistingIndex)
+            {
+                OutIndices.Add(*ExistingIndex);
+                continue;
+            }
+
+            const uint32 NewIndex =
+                static_cast<uint32>(OutVertices.Num());
+            PositionToIndex.Add(Key, NewIndex);
+            OutVertices.Add(FVector3f(Point));
+            OutIndices.Add(NewIndex);
+        }
+
+        return OutVertices.Num() >= 4
+            && OutIndices.Num() >= 12
+            && OutIndices.Num() % 3 == 0;
+    }
+
+    static int32 AddMultiConvex(
+        UBodySetup* BodySetup,
+        const FSmartCollisionSelectionGroup& Group,
+        const FSmartCollisionSettings& Settings)
+    {
+        TArray<FVector3f> Vertices;
+        TArray<uint32> Indices;
+        if (!BuildIndexedMesh(Group, Vertices, Indices))
+        {
+            return 0;
+        }
+
+        const FKAggregateGeom SavedGeometry = BodySetup->AggGeom;
+        DecomposeMeshToHulls(
+            BodySetup,
+            Vertices,
+            Indices,
+            static_cast<uint32>(
+                FMath::Clamp(Settings.MaxConvexHulls, 1, 64)),
+            FMath::Clamp(Settings.MaxConvexVertices, 4, 256),
+            static_cast<uint32>(FMath::Clamp(
+                Settings.ConvexDecompositionResolution,
+                10000,
+                16000000)));
+
+        TArray<FKConvexElem> GeneratedHulls =
+            MoveTemp(BodySetup->AggGeom.ConvexElems);
+        BodySetup->AggGeom = SavedGeometry;
+
+        for (FKConvexElem& Hull : GeneratedHulls)
+        {
+            BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Hull));
+        }
+        return GeneratedHulls.Num();
+    }
+
     static TArray<FVector> ReduceConvexPoints(const TArray<FVector>& Points, int32 MaxPoints)
     {
         if (Points.Num() <= MaxPoints)
@@ -1076,6 +1150,18 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
                 : ESmartCollisionMode::Automatic;
         }
 
+        if (EffectiveMode == ESmartCollisionMode::MultiConvex
+            && Group.bSurfacePatch)
+        {
+            EffectiveMode = ESmartCollisionMode::SurfacePatch;
+        }
+
+        if (EffectiveMode == ESmartCollisionMode::MultiConvex
+            && Group.bSurfacePatch)
+        {
+            EffectiveMode = ESmartCollisionMode::SurfacePatch;
+        }
+
         if (EffectiveMode == ESmartCollisionMode::SurfacePatch)
         {
             if (Settings.bMergeSelection)
@@ -1124,6 +1210,19 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
 
         switch (EffectiveMode)
         {
+        case ESmartCollisionMode::MultiConvex:
+        {
+            const int32 AddedHulls =
+                AddMultiConvex(BodySetup, Group, Settings);
+            AddedShapes += AddedHulls;
+            Result.NumConvex += AddedHulls;
+            if (AddedHulls == 0)
+            {
+                ++Result.NumSkipped;
+            }
+            continue;
+        }
+
         case ESmartCollisionMode::Capsule:
             AddCapsule(BodySetup, Part, Settings.Padding);
             ++Result.NumCapsules;
@@ -1144,6 +1243,7 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
             break;
 
         case ESmartCollisionMode::Automatic:
+        case ESmartCollisionMode::MultiConvex:
         case ESmartCollisionMode::SurfacePatch:
         case ESmartCollisionMode::OrientedBox:
         default:
