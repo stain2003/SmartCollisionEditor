@@ -54,6 +54,8 @@ public:
     void GetSelectedPoints(TArray<FVector>& OutPoints) const;
     void GetSelectedGroups(
         TArray<FSmartCollisionSelectionGroup>& OutGroups) const;
+    void GetSelectedTriangleIndices(TArray<int32>& OutTriangleIndices) const;
+    void SetSelectedTriangleIndices(const TArray<int32>& TriangleIndices);
     void SetSelectionChangedCallback(TFunction<void(int32, int32)> InCallback);
 
 private:
