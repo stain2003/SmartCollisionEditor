@@ -738,6 +738,7 @@ namespace SmartCollision
         }
 
         const FKAggregateGeom SavedGeometry = BodySetup->AggGeom;
+        BodySetup->AggGeom.EmptyElements();
         DecomposeMeshToHulls(
             BodySetup,
             Vertices,
@@ -1148,12 +1149,6 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
             EffectiveMode = Group.bSurfacePatch
                 ? ESmartCollisionMode::SurfacePatch
                 : ESmartCollisionMode::Automatic;
-        }
-
-        if (EffectiveMode == ESmartCollisionMode::MultiConvex
-            && Group.bSurfacePatch)
-        {
-            EffectiveMode = ESmartCollisionMode::SurfacePatch;
         }
 
         if (EffectiveMode == ESmartCollisionMode::MultiConvex
