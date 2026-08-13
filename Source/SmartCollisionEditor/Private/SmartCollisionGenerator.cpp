@@ -1169,17 +1169,30 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
     StaticMesh->PostEditChange();
 
     Result.bSuccess = true;
-    Result.Message = FString::Printf(
-        Settings.bMergeSelection
-            ? TEXT("Merged %d selected regions into %d collision shape: %d boxes, %d capsules, %d spheres, %d convex/surface hulls. Skipped %d. Save the Static Mesh asset to keep the result.")
-            : TEXT("Generated %d collision shapes from %d selected regions: %d boxes, %d capsules, %d spheres, %d convex/surface prisms. Skipped %d. Save the Static Mesh asset to keep the result."),
-        Settings.bMergeSelection ? Result.NumComponents : AddedShapes,
-        Result.NumComponents,
-        Result.NumBoxes,
-        Result.NumCapsules,
-        Result.NumSpheres,
-        Result.NumConvex,
-        Result.NumSkipped);
+    if (Settings.bMergeSelection)
+    {
+        Result.Message = FString::Printf(
+            TEXT("Merged %d selected regions into %d collision shape: %d boxes, %d capsules, %d spheres, %d convex/surface hulls. Skipped %d. Save the Static Mesh asset to keep the result."),
+            Result.NumComponents,
+            AddedShapes,
+            Result.NumBoxes,
+            Result.NumCapsules,
+            Result.NumSpheres,
+            Result.NumConvex,
+            Result.NumSkipped);
+    }
+    else
+    {
+        Result.Message = FString::Printf(
+            TEXT("Generated %d collision shapes from %d selected regions: %d boxes, %d capsules, %d spheres, %d convex/surface prisms. Skipped %d. Save the Static Mesh asset to keep the result."),
+            AddedShapes,
+            Result.NumComponents,
+            Result.NumBoxes,
+            Result.NumCapsules,
+            Result.NumSpheres,
+            Result.NumConvex,
+            Result.NumSkipped);
+    }
     return Result;
 }
 
