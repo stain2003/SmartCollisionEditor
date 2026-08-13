@@ -32,6 +32,18 @@ An Unreal Engine 5.8.1 editor plugin for interactively fitting simple collision 
 
 Selected triangles are outlined in orange. The generated shapes are stored in the mesh's standard `UBodySetup::AggGeom`, participate in Undo/Redo, and require no runtime module.
 
+## Smart multi-convex for irregular geometry
+
+Use **Smart multi-convex (irregular shapes)** when one box, capsule, sphere, or convex hull cannot follow concave or bent geometry. It uses Unreal Engine 5.8.1's built-in VHACD decomposition to create several convex collision hulls from the selected triangles.
+
+- **One per selected region** decomposes every selected connected part independently.
+- **Merge selection into one** runs one decomposition over all selected triangles.
+- Surface/face selections automatically fall back to thin surface collision because open planar selections are not reliable VHACD solids.
+- Existing collision is preserved unless **Replace all existing collision before adding** is enabled.
+- Recommended starting point: 8 hulls, 64 vertices per hull, resolution 100000.
+- For deep recesses, bent pipes, and irregular brackets: try 12-20 hulls and resolution 250000-500000.
+- More hulls and higher resolution improve fitting at the cost of generation time and runtime physics complexity.
+
 ## Collision fitting
 
 - **Auto** chooses a sphere for near-uniform bounds, a capsule for long round parts, and an oriented box otherwise.
