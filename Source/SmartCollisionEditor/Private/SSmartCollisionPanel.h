@@ -1,12 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "SmartCollisionGenerator.h"
 #include "Widgets/SCompoundWidget.h"
 
 class IStaticMeshEditor;
 class STextBlock;
 class USmartCollisionSelectionTool;
-enum class ESmartCollisionMode : uint8;
 enum class ESmartCollisionSelectionMode : uint8;
 
 class SSmartCollisionPanel final : public SCompoundWidget
@@ -48,7 +48,7 @@ private:
     TSharedPtr<STextBlock> SelectionText;
     TSharedPtr<STextBlock> StatusText;
     TArray<int32> CachedSelectedTriangleIndices;
-    TArray<struct FSmartCollisionSelectionGroup> CachedSelectionGroups;
+    TArray<FSmartCollisionSelectionGroup> CachedSelectionGroups;
 
     ESmartCollisionSelectionMode SelectionMode;
     float Padding = 0.25f;
