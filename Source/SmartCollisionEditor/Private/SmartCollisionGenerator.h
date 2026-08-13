@@ -21,6 +21,7 @@ struct FSmartCollisionSettings
     int32 MaxShapes = 256;
     int32 MaxConvexVertices = 64;
     bool bReplaceExisting = true;
+    bool bMergeSelection = false;
 };
 
 struct FSmartCollisionSelectionGroup
