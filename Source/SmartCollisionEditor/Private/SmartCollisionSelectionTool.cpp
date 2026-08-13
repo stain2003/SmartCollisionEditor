@@ -517,6 +517,31 @@ void USmartCollisionSelectionTool::GetSelectedGroups(
         });
 }
 
+void USmartCollisionSelectionTool::GetSelectedTriangleIndices(
+    TArray<int32>& OutTriangleIndices) const
+{
+    OutTriangleIndices = SelectedTriangles.Array();
+}
+
+void USmartCollisionSelectionTool::SetSelectedTriangleIndices(
+    const TArray<int32>& TriangleIndices)
+{
+    SelectedTriangles.Reset();
+    for (const int32 TriangleIndex : TriangleIndices)
+    {
+        if (Triangles.IsValidIndex(TriangleIndex))
+        {
+            SelectedTriangles.Add(TriangleIndex);
+        }
+    }
+
+    NotifySelectionChanged();
+    if (const TSharedPtr<IStaticMeshEditor> PinnedEditor = Editor.Pin())
+    {
+        PinnedEditor->RefreshViewport();
+    }
+}
+
 void USmartCollisionSelectionTool::SetSelectionChangedCallback(
     TFunction<void(int32, int32)> InCallback)
 {
