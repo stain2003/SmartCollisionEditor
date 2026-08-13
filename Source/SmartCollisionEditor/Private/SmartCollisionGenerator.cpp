@@ -962,7 +962,7 @@ FSmartCollisionResult FSmartCollisionGenerator::Generate(
     Result.Message = FString::Printf(
         TEXT("Generated %d shapes from %d connected parts: %d boxes, %d capsules, %d spheres, %d convex. Skipped %d. Save the Static Mesh asset to keep the result."),
         AddedShapes,
-        Result.NumComponents,
+        Settings.bMergeSelection ? AddedShapes : Result.NumComponents,
         Result.NumBoxes,
         Result.NumCapsules,
         Result.NumSpheres,
@@ -1005,6 +1005,28 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
         return Result;
     }
 
+    TArray<FSmartCollisionSelectionGroup> GroupsToGenerate;
+    if (Settings.bMergeSelection)
+    {
+        FSmartCollisionSelectionGroup& MergedGroup =
+            GroupsToGenerate.AddDefaulted_GetRef();
+        MergedGroup.bSurfacePatch =
+            SelectionGroups[0].bSurfacePatch;
+
+        for (const FSmartCollisionSelectionGroup& Group : SelectionGroups)
+        {
+            for (const FVector& Point : Group.Points)
+            {
+                MergedGroup.Points.AddUnique(Point);
+            }
+            MergedGroup.TriangleVertices.Append(Group.TriangleVertices);
+        }
+    }
+    else
+    {
+        GroupsToGenerate = SelectionGroups;
+    }
+
     const FScopedTransaction Transaction(
         LOCTEXT(
             "GenerateSelectedTransaction",
@@ -1033,7 +1055,7 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
     int32 AddedShapes = 0;
     Result.NumComponents = SelectionGroups.Num();
 
-    for (const FSmartCollisionSelectionGroup& Group : SelectionGroups)
+    for (const FSmartCollisionSelectionGroup& Group : GroupsToGenerate)
     {
         if (AddedShapes >= Settings.MaxShapes)
         {
@@ -1056,16 +1078,37 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
 
         if (EffectiveMode == ESmartCollisionMode::SurfacePatch)
         {
-            const int32 AddedSurfaceShapes = AddSurfacePatch(
-                BodySetup,
-                Group,
-                Settings.Padding,
-                Settings.MaxShapes - AddedShapes);
-            AddedShapes += AddedSurfaceShapes;
-            Result.NumConvex += AddedSurfaceShapes;
-            if (AddedSurfaceShapes == 0)
+            if (Settings.bMergeSelection)
             {
-                ++Result.NumSkipped;
+                FPart SurfacePart;
+                SurfacePart.Points = Group.Points;
+                ComputePrincipalAxes(SurfacePart);
+                AddConvex(
+                    BodySetup,
+                    MakeConvexPartWithThickness(
+                        SurfacePart,
+                        Settings.Padding),
+                    0.0f,
+                    FMath::Clamp(
+                        Settings.MaxConvexVertices,
+                        8,
+                        256));
+                ++AddedShapes;
+                ++Result.NumConvex;
+            }
+            else
+            {
+                const int32 AddedSurfaceShapes = AddSurfacePatch(
+                    BodySetup,
+                    Group,
+                    Settings.Padding,
+                    Settings.MaxShapes - AddedShapes);
+                AddedShapes += AddedSurfaceShapes;
+                Result.NumConvex += AddedSurfaceShapes;
+                if (AddedSurfaceShapes == 0)
+                {
+                    ++Result.NumSkipped;
+                }
             }
             continue;
         }
@@ -1127,8 +1170,10 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
 
     Result.bSuccess = true;
     Result.Message = FString::Printf(
-        TEXT("Generated %d collision shapes from %d selected regions: %d boxes, %d capsules, %d spheres, %d convex/surface prisms. Skipped %d. Save the Static Mesh asset to keep the result."),
-        AddedShapes,
+        Settings.bMergeSelection
+            ? TEXT("Merged %d selected regions into %d collision shape: %d boxes, %d capsules, %d spheres, %d convex/surface hulls. Skipped %d. Save the Static Mesh asset to keep the result.")
+            : TEXT("Generated %d collision shapes from %d selected regions: %d boxes, %d capsules, %d spheres, %d convex/surface prisms. Skipped %d. Save the Static Mesh asset to keep the result."),
+        Settings.bMergeSelection ? Result.NumComponents : AddedShapes,
         Result.NumComponents,
         Result.NumBoxes,
         Result.NumCapsules,
