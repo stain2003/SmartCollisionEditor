@@ -29,6 +29,7 @@ private:
     FReply GenerateCapsule();
     FReply GenerateSphere();
     FReply GenerateConvex();
+    FReply GenerateMultiConvex();
     FReply GenerateSurfacePatch();
     FReply ClearCollision();
 
@@ -53,6 +54,8 @@ private:
     ESmartCollisionSelectionMode SelectionMode;
     float Padding = 0.25f;
     int32 MaxConvexVertices = 64;
+    int32 MaxConvexHulls = 8;
+    int32 ConvexDecompositionResolution = 100000;
     bool bReplaceExisting = false;
     bool bMergeSelection = false;
 };
