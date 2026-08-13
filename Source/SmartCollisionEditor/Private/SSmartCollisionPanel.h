@@ -21,6 +21,7 @@ public:
 
 private:
     FReply StartPicking();
+    FReply StopPicking();
     FReply ClearSelection();
     FReply SelectAll();
     FReply GenerateAutomatic();
@@ -34,6 +35,7 @@ private:
     void SetSelectionMode(ESmartCollisionSelectionMode Mode);
     ECheckBoxState IsSelectionModeChecked(ESmartCollisionSelectionMode Mode) const;
     void Generate(ESmartCollisionMode Mode);
+    void CacheSelectionFromTool();
     void SetStatus(const FString& Message);
     void UpdateSelectionSummary(int32 TriangleCount, int32 PointCount);
 
@@ -45,10 +47,13 @@ private:
     TWeakObjectPtr<class USmartCollisionSelectionToolBuilder> SelectionToolBuilder;
     TSharedPtr<STextBlock> SelectionText;
     TSharedPtr<STextBlock> StatusText;
+    TArray<int32> CachedSelectedTriangleIndices;
+    TArray<struct FSmartCollisionSelectionGroup> CachedSelectionGroups;
 
     ESmartCollisionSelectionMode SelectionMode;
     float Padding = 0.25f;
     int32 MaxConvexVertices = 64;
     bool bReplaceExisting = false;
+    bool bMergeSelection = false;
 };
 
