@@ -1238,7 +1238,6 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
             break;
 
         case ESmartCollisionMode::Automatic:
-        case ESmartCollisionMode::MultiConvex:
         case ESmartCollisionMode::SurfacePatch:
         case ESmartCollisionMode::OrientedBox:
         default:
