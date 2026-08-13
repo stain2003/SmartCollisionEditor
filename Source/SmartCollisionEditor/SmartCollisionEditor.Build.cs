@@ -30,6 +30,7 @@ public class SmartCollisionEditor : ModuleRules
             "InteractiveToolsFramework",
             "LevelEditor",
             "MeshDescription",
+            "PhysicsUtilities",
             "Slate",
             "SlateCore",
             "StaticMeshDescription",
