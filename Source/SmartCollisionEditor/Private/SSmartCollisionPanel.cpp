@@ -1,4 +1,4 @@
-// Builds the Smart Collision panel, edits convex origins, and routes selections to collision generation.
+// Builds the Smart Collision panel, edits convex transforms/origins, and routes selections to generation.
 #include "SSmartCollisionPanel.h"
 
 #include "EditorModeManager.h"
@@ -14,6 +14,7 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SNumericEntryBox.h"
+#include "Widgets/Input/SVectorInputBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
@@ -408,6 +409,147 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                             })
                         ]
                     ]
+
+                    + SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 2)
+                    [
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot()
+                        .FillWidth(0.18f)
+                        .VAlign(VAlign_Center)
+                        [
+                            SNew(STextBlock)
+                            .Text(LOCTEXT("CollisionPosition", "Position"))
+                            .ToolTipText(LOCTEXT(
+                                "CollisionPositionTip",
+                                "Selected convex collision origin position in centimeters."))
+                        ]
+                        + SHorizontalBox::Slot()
+                        .FillWidth(0.82f)
+                        [
+                            SNew(SNumericVectorInputBox<FVector::FReal>)
+                            .X_Lambda([this]()
+                            {
+                                return GetSelectedCollisionTransformComponent(
+                                    false,
+                                    0);
+                            })
+                            .Y_Lambda([this]()
+                            {
+                                return GetSelectedCollisionTransformComponent(
+                                    false,
+                                    1);
+                            })
+                            .Z_Lambda([this]()
+                            {
+                                return GetSelectedCollisionTransformComponent(
+                                    false,
+                                    2);
+                            })
+                            .bColorAxisLabels(true)
+                            .AllowSpin(false)
+                            .OnXCommitted_Lambda(
+                                [this](
+                                    FVector::FReal Value,
+                                    ETextCommit::Type)
+                                {
+                                    SetSelectedCollisionTransformComponent(
+                                        Value,
+                                        false,
+                                        0);
+                                })
+                            .OnYCommitted_Lambda(
+                                [this](
+                                    FVector::FReal Value,
+                                    ETextCommit::Type)
+                                {
+                                    SetSelectedCollisionTransformComponent(
+                                        Value,
+                                        false,
+                                        1);
+                                })
+                            .OnZCommitted_Lambda(
+                                [this](
+                                    FVector::FReal Value,
+                                    ETextCommit::Type)
+                                {
+                                    SetSelectedCollisionTransformComponent(
+                                        Value,
+                                        false,
+                                        2);
+                                })
+                        ]
+                    ]
+
+                    + SVerticalBox::Slot().AutoHeight().Padding(0, 2)
+                    [
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot()
+                        .FillWidth(0.18f)
+                        .VAlign(VAlign_Center)
+                        [
+                            SNew(STextBlock)
+                            .Text(LOCTEXT("CollisionScale", "Scale"))
+                            .ToolTipText(LOCTEXT(
+                                "CollisionScaleTip",
+                                "Selected convex collision scale around its current origin."))
+                        ]
+                        + SHorizontalBox::Slot()
+                        .FillWidth(0.82f)
+                        [
+                            SNew(SNumericVectorInputBox<FVector::FReal>)
+                            .X_Lambda([this]()
+                            {
+                                return GetSelectedCollisionTransformComponent(
+                                    true,
+                                    0);
+                            })
+                            .Y_Lambda([this]()
+                            {
+                                return GetSelectedCollisionTransformComponent(
+                                    true,
+                                    1);
+                            })
+                            .Z_Lambda([this]()
+                            {
+                                return GetSelectedCollisionTransformComponent(
+                                    true,
+                                    2);
+                            })
+                            .MinVector(FVector(0.001))
+                            .bColorAxisLabels(true)
+                            .AllowSpin(false)
+                            .OnXCommitted_Lambda(
+                                [this](
+                                    FVector::FReal Value,
+                                    ETextCommit::Type)
+                                {
+                                    SetSelectedCollisionTransformComponent(
+                                        Value,
+                                        true,
+                                        0);
+                                })
+                            .OnYCommitted_Lambda(
+                                [this](
+                                    FVector::FReal Value,
+                                    ETextCommit::Type)
+                                {
+                                    SetSelectedCollisionTransformComponent(
+                                        Value,
+                                        true,
+                                        1);
+                                })
+                            .OnZCommitted_Lambda(
+                                [this](
+                                    FVector::FReal Value,
+                                    ETextCommit::Type)
+                                {
+                                    SetSelectedCollisionTransformComponent(
+                                        Value,
+                                        true,
+                                        2);
+                                })
+                        ]
+                    ]
                 ]
 
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
@@ -760,6 +902,126 @@ EVisibility SSmartCollisionPanel::GetOriginSectionVisibility() const
     }
 
     return EVisibility::Collapsed;
+}
+
+TOptional<FVector::FReal>
+SSmartCollisionPanel::GetSelectedCollisionTransformComponent(
+    bool bScale,
+    int32 Component) const
+{
+    const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
+    if (!Editor || Component < 0 || Component > 2)
+    {
+        return TOptional<FVector::FReal>();
+    }
+
+    TOptional<FVector::FReal> SharedValue;
+    for (const IStaticMeshEditor::FPrimData& PrimData :
+         Editor->GetSelectedPrims())
+    {
+        if (PrimData.PrimType != EAggCollisionShape::Convex
+            || !Editor->IsPrimValid(PrimData))
+        {
+            continue;
+        }
+
+        const FTransform Transform = Editor->GetPrimTransform(PrimData);
+        const FVector TransformValue =
+            bScale ? Transform.GetScale3D() : Transform.GetLocation();
+        const FVector::FReal ComponentValue = TransformValue[Component];
+
+        if (!SharedValue.IsSet())
+        {
+            SharedValue = ComponentValue;
+        }
+        else if (!FMath::IsNearlyEqual(
+                     SharedValue.GetValue(),
+                     ComponentValue))
+        {
+            return TOptional<FVector::FReal>();
+        }
+    }
+
+    return SharedValue;
+}
+
+void SSmartCollisionPanel::SetSelectedCollisionTransformComponent(
+    FVector::FReal Value,
+    bool bScale,
+    int32 Component)
+{
+    const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
+    UStaticMesh* Mesh = Editor ? Editor->GetStaticMesh() : nullptr;
+    UBodySetup* BodySetup = Mesh ? Mesh->GetBodySetup() : nullptr;
+    if (!Editor || !Mesh || !BodySetup
+        || Component < 0 || Component > 2)
+    {
+        return;
+    }
+
+    TArray<IStaticMeshEditor::FPrimData> SelectedConvexPrims;
+    for (const IStaticMeshEditor::FPrimData& PrimData :
+         Editor->GetSelectedPrims())
+    {
+        if (PrimData.PrimType == EAggCollisionShape::Convex
+            && Editor->IsPrimValid(PrimData)
+            && BodySetup->AggGeom.ConvexElems.IsValidIndex(
+                PrimData.PrimIndex))
+        {
+            SelectedConvexPrims.Add(PrimData);
+        }
+    }
+
+    if (SelectedConvexPrims.IsEmpty())
+    {
+        return;
+    }
+
+    const FScopedTransaction Transaction(
+        bScale
+            ? LOCTEXT(
+                "SetCollisionScaleTransaction",
+                "Set Convex Collision Scale")
+            : LOCTEXT(
+                "SetCollisionPositionTransaction",
+                "Set Convex Collision Position"));
+    Mesh->Modify();
+    BodySetup->Modify();
+
+    const FVector::FReal AppliedValue =
+        bScale ? FMath::Max(Value, 0.001) : Value;
+    for (const IStaticMeshEditor::FPrimData& PrimData :
+         SelectedConvexPrims)
+    {
+        FTransform Transform = Editor->GetPrimTransform(PrimData);
+        FVector TransformValue =
+            bScale ? Transform.GetScale3D() : Transform.GetLocation();
+        TransformValue[Component] = AppliedValue;
+
+        if (bScale)
+        {
+            Transform.SetScale3D(TransformValue);
+        }
+        else
+        {
+            Transform.SetLocation(TransformValue);
+        }
+        Editor->SetPrimTransform(PrimData, Transform);
+    }
+
+    BodySetup->InvalidatePhysicsData();
+    BodySetup->CreatePhysicsMeshes();
+    Mesh->SetCustomizedCollision(true);
+    Mesh->MarkPackageDirty();
+    Mesh->PostEditChange();
+
+    Editor->RefreshTool();
+    Editor->RefreshViewport();
+    SetStatus(FString::Printf(
+        bScale
+            ? TEXT("Updated scale for %d selected convex collision(s).")
+            : TEXT("Updated position for %d selected convex collision(s)."),
+        SelectedConvexPrims.Num()));
 }
 
 FReply SSmartCollisionPanel::SetSelectedCollisionOrigin(

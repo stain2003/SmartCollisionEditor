@@ -42,6 +42,13 @@ private:
     FReply ClearCollision();
 
     EVisibility GetOriginSectionVisibility() const;
+    TOptional<FVector::FReal> GetSelectedCollisionTransformComponent(
+        bool bScale,
+        int32 Component) const;
+    void SetSelectedCollisionTransformComponent(
+        FVector::FReal Value,
+        bool bScale,
+        int32 Component);
     void SetSelectionMode(ESmartCollisionSelectionMode Mode);
     ECheckBoxState IsSelectionModeChecked(ESmartCollisionSelectionMode Mode) const;
     void Generate(ESmartCollisionMode Mode);
