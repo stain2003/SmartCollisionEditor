@@ -20,6 +20,13 @@ public:
     virtual ~SSmartCollisionPanel() override;
 
 private:
+    enum class ECollisionOriginPreset : uint8
+    {
+        Top,
+        Bottom,
+        Volume
+    };
+
     FReply StartPicking();
     FReply StopPicking();
     FReply ClearSelection();
@@ -31,8 +38,10 @@ private:
     FReply GenerateConvex();
     FReply GenerateMultiConvex();
     FReply GenerateSurfacePatch();
+    FReply SetSelectedCollisionOrigin(ECollisionOriginPreset Preset);
     FReply ClearCollision();
 
+    EVisibility GetOriginSectionVisibility() const;
     void SetSelectionMode(ESmartCollisionSelectionMode Mode);
     ECheckBoxState IsSelectionModeChecked(ESmartCollisionSelectionMode Mode) const;
     void Generate(ESmartCollisionMode Mode);

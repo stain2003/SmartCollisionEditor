@@ -751,6 +751,30 @@ namespace SmartCollision
         return true;
     }
 
+    static void SetConvexOriginToVolumeCenter(FKConvexElem& Convex)
+    {
+        if (Convex.VertexData.IsEmpty())
+        {
+            return;
+        }
+
+        Convex.UpdateElemBox();
+        const FVector LocalCenter = Convex.ElemBox.GetCenter();
+        const FTransform PreviousTransform = Convex.GetTransform();
+
+        for (FVector& Vertex : Convex.VertexData)
+        {
+            Vertex -= LocalCenter;
+        }
+
+        FTransform CenteredTransform = PreviousTransform;
+        CenteredTransform.SetTranslation(
+            PreviousTransform.TransformPosition(LocalCenter));
+        Convex.SetTransform(CenteredTransform);
+        Convex.UpdateElemBox();
+        Convex.ResetChaosConvexMesh();
+    }
+
     static void AddThroughConvexFromPoints(
         UBodySetup* BodySetup,
         const TArray<FVector>& SurfacePoints,
@@ -779,7 +803,6 @@ namespace SmartCollision
             CenterDepth);
 
         FKConvexElem Convex;
-        FVector BottomCenter = FVector::ZeroVector;
         Convex.VertexData.Reserve(SurfacePoints.Num() * 2);
         for (const FVector& Point : SurfacePoints)
         {
@@ -800,16 +823,9 @@ namespace SmartCollision
                 Point + InwardDirection * PointDepth;
             Convex.VertexData.Add(Point);
             Convex.VertexData.Add(BackPoint);
-            BottomCenter += BackPoint;
         }
 
-        BottomCenter /= static_cast<double>(SurfacePoints.Num());
-        for (FVector& Vertex : Convex.VertexData)
-        {
-            Vertex -= BottomCenter;
-        }
-        Convex.SetTransform(FTransform(BottomCenter));
-        Convex.UpdateElemBox();
+        SetConvexOriginToVolumeCenter(Convex);
         BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Convex));
     }
 
@@ -972,6 +988,7 @@ namespace SmartCollision
 
         for (FKConvexElem& Hull : GeneratedHulls)
         {
+            SetConvexOriginToVolumeCenter(Hull);
             BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Hull));
         }
         return GeneratedHulls.Num();
@@ -1058,7 +1075,7 @@ namespace SmartCollision
         FKConvexElem Convex;
         Convex.VertexData =
             ReduceConvexPoints(ExpandedPoints, MaxVertices);
-        Convex.UpdateElemBox();
+        SetConvexOriginToVolumeCenter(Convex);
         BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Convex));
     }
 

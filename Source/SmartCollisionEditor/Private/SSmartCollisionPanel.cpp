@@ -1,4 +1,4 @@
-// Builds the Smart Collision panel and routes viewport selections to collision generation.
+// Builds the Smart Collision panel, edits convex origins, and routes selections to collision generation.
 #include "SSmartCollisionPanel.h"
 
 #include "EditorModeManager.h"
@@ -353,6 +353,65 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
 
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
                 [
+                    SNew(SVerticalBox)
+                    .Visibility(
+                        this,
+                        &SSmartCollisionPanel::GetOriginSectionVisibility)
+
+                    + SVerticalBox::Slot().AutoHeight().Padding(0, 2)
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("OriginTitle", "Origin"))
+                        .Font(FAppStyle::GetFontStyle(TEXT("BoldFont")))
+                    ]
+
+                    + SVerticalBox::Slot().AutoHeight()
+                    [
+                        SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot().FillWidth(1)
+                        [
+                            SNew(SButton)
+                            .Text(LOCTEXT("OriginTop", "Top"))
+                            .ToolTipText(LOCTEXT(
+                                "OriginTopTip",
+                                "Moves the selected convex collision origin to its local top center without moving its geometry."))
+                            .OnClicked_Lambda([this]()
+                            {
+                                return SetSelectedCollisionOrigin(
+                                    ECollisionOriginPreset::Top);
+                            })
+                        ]
+                        + SHorizontalBox::Slot().FillWidth(1).Padding(4, 0)
+                        [
+                            SNew(SButton)
+                            .Text(LOCTEXT("OriginBottom", "Bottom"))
+                            .ToolTipText(LOCTEXT(
+                                "OriginBottomTip",
+                                "Moves the selected convex collision origin to its local bottom center without moving its geometry."))
+                            .OnClicked_Lambda([this]()
+                            {
+                                return SetSelectedCollisionOrigin(
+                                    ECollisionOriginPreset::Bottom);
+                            })
+                        ]
+                        + SHorizontalBox::Slot().FillWidth(1)
+                        [
+                            SNew(SButton)
+                            .Text(LOCTEXT("OriginVolume", "Volume"))
+                            .ToolTipText(LOCTEXT(
+                                "OriginVolumeTip",
+                                "Moves the selected convex collision origin to its volume center without moving its geometry."))
+                            .OnClicked_Lambda([this]()
+                            {
+                                return SetSelectedCollisionOrigin(
+                                    ECollisionOriginPreset::Volume);
+                            })
+                        ]
+                    ]
+                ]
+
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 4)
+                [
                     SNew(SButton)
                     .Text(LOCTEXT("ClearCollision", "Clear all simple collision"))
                     .OnClicked(this, &SSmartCollisionPanel::ClearCollision)
@@ -680,6 +739,126 @@ void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
         }
         Editor->RefreshViewport();
     }
+}
+
+EVisibility SSmartCollisionPanel::GetOriginSectionVisibility() const
+{
+    const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
+    if (!Editor)
+    {
+        return EVisibility::Collapsed;
+    }
+
+    for (const IStaticMeshEditor::FPrimData& PrimData :
+         Editor->GetSelectedPrims())
+    {
+        if (PrimData.PrimType == EAggCollisionShape::Convex
+            && Editor->IsPrimValid(PrimData))
+        {
+            return EVisibility::Visible;
+        }
+    }
+
+    return EVisibility::Collapsed;
+}
+
+FReply SSmartCollisionPanel::SetSelectedCollisionOrigin(
+    ECollisionOriginPreset Preset)
+{
+    const TSharedPtr<IStaticMeshEditor> Editor = StaticMeshEditor.Pin();
+    UStaticMesh* Mesh = Editor ? Editor->GetStaticMesh() : nullptr;
+    UBodySetup* BodySetup = Mesh ? Mesh->GetBodySetup() : nullptr;
+    if (!Editor || !Mesh || !BodySetup)
+    {
+        return FReply::Handled();
+    }
+
+    TArray<IStaticMeshEditor::FPrimData> SelectedConvexPrims;
+    for (const IStaticMeshEditor::FPrimData& PrimData :
+         Editor->GetSelectedPrims())
+    {
+        if (PrimData.PrimType == EAggCollisionShape::Convex
+            && Editor->IsPrimValid(PrimData)
+            && BodySetup->AggGeom.ConvexElems.IsValidIndex(
+                PrimData.PrimIndex))
+        {
+            SelectedConvexPrims.Add(PrimData);
+        }
+    }
+
+    if (SelectedConvexPrims.IsEmpty())
+    {
+        return FReply::Handled();
+    }
+
+    const FScopedTransaction Transaction(
+        LOCTEXT(
+            "SetCollisionOriginTransaction",
+            "Set Convex Collision Origin"));
+    Mesh->Modify();
+    BodySetup->Modify();
+
+    int32 UpdatedCount = 0;
+    for (const IStaticMeshEditor::FPrimData& PrimData :
+         SelectedConvexPrims)
+    {
+        FKConvexElem& Convex =
+            BodySetup->AggGeom.ConvexElems[PrimData.PrimIndex];
+        if (Convex.VertexData.IsEmpty())
+        {
+            continue;
+        }
+
+        Convex.UpdateElemBox();
+        FVector LocalPivot = Convex.ElemBox.GetCenter();
+        if (Preset == ECollisionOriginPreset::Top)
+        {
+            LocalPivot.Z = Convex.ElemBox.Max.Z;
+        }
+        else if (Preset == ECollisionOriginPreset::Bottom)
+        {
+            LocalPivot.Z = Convex.ElemBox.Min.Z;
+        }
+
+        const FTransform PreviousTransform = Convex.GetTransform();
+        for (FVector& Vertex : Convex.VertexData)
+        {
+            Vertex -= LocalPivot;
+        }
+
+        FTransform NewTransform = PreviousTransform;
+        NewTransform.SetTranslation(
+            PreviousTransform.TransformPosition(LocalPivot));
+        Convex.SetTransform(NewTransform);
+        Convex.UpdateElemBox();
+        Convex.ResetChaosConvexMesh();
+        ++UpdatedCount;
+    }
+
+    if (UpdatedCount > 0)
+    {
+        BodySetup->InvalidatePhysicsData();
+        BodySetup->CreatePhysicsMeshes();
+        Mesh->SetCustomizedCollision(true);
+        Mesh->MarkPackageDirty();
+        Mesh->PostEditChange();
+
+        Editor->RefreshTool();
+        Editor->RefreshViewport();
+
+        const TCHAR* PresetName =
+            Preset == ECollisionOriginPreset::Top
+                ? TEXT("top center")
+                : Preset == ECollisionOriginPreset::Bottom
+                    ? TEXT("bottom center")
+                    : TEXT("volume center");
+        SetStatus(FString::Printf(
+            TEXT("Moved %d selected convex collision origin(s) to the %s."),
+            UpdatedCount,
+            PresetName));
+    }
+
+    return FReply::Handled();
 }
 
 FReply SSmartCollisionPanel::ClearCollision()
