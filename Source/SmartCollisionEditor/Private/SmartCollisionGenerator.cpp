@@ -1385,6 +1385,28 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
                 : ESmartCollisionMode::Automatic;
         }
 
+        if (EffectiveMode == ESmartCollisionMode::MultiConvex
+            && Group.bSurfacePatch
+            && Settings.bMergeSelection)
+        {
+            FPart SurfacePart;
+            SurfacePart.Points = Group.Points;
+            ComputePrincipalAxes(SurfacePart);
+            AddConvex(
+                BodySetup,
+                MakeConvexPartWithThickness(
+                    SurfacePart,
+                    Settings.Padding),
+                0.0f,
+                FMath::Clamp(
+                    Settings.MaxConvexVertices,
+                    8,
+                    256));
+            ++AddedShapes;
+            ++Result.NumConvex;
+            continue;
+        }
+
         if (EffectiveMode == ESmartCollisionMode::SurfacePatch)
         {
             if (!bSurfaceRayTrianglesBuilt)
