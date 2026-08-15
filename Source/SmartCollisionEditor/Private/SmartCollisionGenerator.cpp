@@ -770,7 +770,7 @@ namespace SmartCollision
         }
         SurfaceCenter /= static_cast<double>(SurfacePoints.Num());
 
-        const FVector InwardDirection = -Normal.GetSafeNormal();
+        const FVector InwardDirection = Normal.GetSafeNormal();
         double CenterDepth = FallbackDepth;
         const bool bHasCenterDepth = FindOppositeSurfaceDepth(
             MeshTriangles,
