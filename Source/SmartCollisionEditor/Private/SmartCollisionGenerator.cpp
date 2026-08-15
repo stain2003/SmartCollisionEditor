@@ -1,3 +1,4 @@
+// Generates primitive, convex, decomposed, and through-surface collision for static meshes.
 #include "SmartCollisionGenerator.h"
 
 #include "ConvexDecompTool.h"
@@ -448,6 +449,157 @@ namespace SmartCollision
         BodySetup->AggGeom.SphereElems.Add(Sphere);
     }
 
+    struct FSurfaceRayTriangle
+    {
+        FVector Vertices[3];
+    };
+
+    static TArray<FVector> ReduceConvexPoints(
+        const TArray<FVector>& Points,
+        int32 MaxPoints);
+
+    static void BuildSurfaceRayTriangles(
+        UStaticMesh* StaticMesh,
+        TArray<FSurfaceRayTriangle>& OutTriangles)
+    {
+        OutTriangles.Reset();
+
+        const FMeshDescription* MeshDescription =
+            StaticMesh ? StaticMesh->GetMeshDescription(0) : nullptr;
+        if (!MeshDescription)
+        {
+            return;
+        }
+
+        const FStaticMeshConstAttributes Attributes(*MeshDescription);
+        const TVertexAttributesConstRef<FVector3f> Positions =
+            Attributes.GetVertexPositions();
+        OutTriangles.Reserve(MeshDescription->Triangles().Num());
+
+        for (const FTriangleID TriangleID :
+             MeshDescription->Triangles().GetElementIDs())
+        {
+            const TArrayView<const FVertexID> Vertices =
+                MeshDescription->GetTriangleVertices(TriangleID);
+            if (Vertices.Num() != 3)
+            {
+                continue;
+            }
+
+            FSurfaceRayTriangle& Triangle =
+                OutTriangles.AddDefaulted_GetRef();
+            for (int32 Corner = 0; Corner < 3; ++Corner)
+            {
+                Triangle.Vertices[Corner] =
+                    FVector(Positions[Vertices[Corner]]);
+            }
+        }
+    }
+
+    static bool FindRayTriangleDistance(
+        const FVector& RayOrigin,
+        const FVector& RayDirection,
+        const FSurfaceRayTriangle& Triangle,
+        double& OutDistance)
+    {
+        const FVector EdgeAB =
+            Triangle.Vertices[1] - Triangle.Vertices[0];
+        const FVector EdgeAC =
+            Triangle.Vertices[2] - Triangle.Vertices[0];
+        const FVector DirectionCrossEdgeAC =
+            FVector::CrossProduct(RayDirection, EdgeAC);
+        const double Determinant =
+            FVector::DotProduct(EdgeAB, DirectionCrossEdgeAC);
+        constexpr double IntersectionTolerance = SMALL_NUMBER;
+
+        if (FMath::Abs(Determinant) <= IntersectionTolerance)
+        {
+            return false;
+        }
+
+        const double InverseDeterminant = 1.0 / Determinant;
+        const FVector OriginFromA =
+            RayOrigin - Triangle.Vertices[0];
+        const double BarycentricB =
+            FVector::DotProduct(OriginFromA, DirectionCrossEdgeAC)
+            * InverseDeterminant;
+        if (BarycentricB < -IntersectionTolerance
+            || BarycentricB > 1.0 + IntersectionTolerance)
+        {
+            return false;
+        }
+
+        const FVector OriginCrossEdgeAB =
+            FVector::CrossProduct(OriginFromA, EdgeAB);
+        const double BarycentricC =
+            FVector::DotProduct(RayDirection, OriginCrossEdgeAB)
+            * InverseDeterminant;
+        if (BarycentricC < -IntersectionTolerance
+            || BarycentricB + BarycentricC
+                > 1.0 + IntersectionTolerance)
+        {
+            return false;
+        }
+
+        OutDistance =
+            FVector::DotProduct(EdgeAC, OriginCrossEdgeAB)
+            * InverseDeterminant;
+        return OutDistance > IntersectionTolerance;
+    }
+
+    static bool FindOppositeSurfaceDepth(
+        const TArray<FSurfaceRayTriangle>& MeshTriangles,
+        const FVector& SurfacePoint,
+        const FVector& InwardDirection,
+        double& OutDepth)
+    {
+        constexpr double SurfaceOffset = 0.01;
+        constexpr double MinimumOppositeDistance = 0.01;
+        const FVector RayOrigin =
+            SurfacePoint + InwardDirection * SurfaceOffset;
+        double ClosestDistance = DBL_MAX;
+
+        for (const FSurfaceRayTriangle& Triangle : MeshTriangles)
+        {
+            double Distance = DBL_MAX;
+            if (FindRayTriangleDistance(
+                    RayOrigin,
+                    InwardDirection,
+                    Triangle,
+                    Distance)
+                && Distance >= MinimumOppositeDistance
+                && Distance < ClosestDistance)
+            {
+                ClosestDistance = Distance;
+            }
+        }
+
+        if (ClosestDistance == DBL_MAX)
+        {
+            return false;
+        }
+
+        OutDepth = SurfaceOffset + ClosestDistance;
+        return true;
+    }
+
+    static FVector ComputeSurfaceNormal(
+        const FSmartCollisionSelectionGroup& Group)
+    {
+        FVector Normal = FVector::ZeroVector;
+        for (int32 Index = 0;
+             Index + 2 < Group.TriangleVertices.Num();
+             Index += 3)
+        {
+            Normal += FVector::CrossProduct(
+                Group.TriangleVertices[Index + 1]
+                    - Group.TriangleVertices[Index],
+                Group.TriangleVertices[Index + 2]
+                    - Group.TriangleVertices[Index]);
+        }
+        return Normal.GetSafeNormal();
+    }
+
     struct FSurfaceHullPoint
     {
         FVector Position;
@@ -471,17 +623,7 @@ namespace SmartCollision
         OutHull.Reset();
         OutNormal = FVector::ZeroVector;
 
-        for (int32 Index = 0;
-             Index + 2 < Group.TriangleVertices.Num();
-             Index += 3)
-        {
-            OutNormal += FVector::CrossProduct(
-                Group.TriangleVertices[Index + 1]
-                    - Group.TriangleVertices[Index],
-                Group.TriangleVertices[Index + 2]
-                    - Group.TriangleVertices[Index]);
-        }
-        OutNormal.Normalize();
+        OutNormal = ComputeSurfaceNormal(Group);
         if (OutNormal.IsNearlyZero() || Group.Points.Num() < 3)
         {
             return false;
@@ -609,18 +751,53 @@ namespace SmartCollision
         return true;
     }
 
-    static void AddThinConvexFromPolygon(
+    static void AddThroughConvexFromPoints(
         UBodySetup* BodySetup,
-        const TArray<FVector>& Polygon,
+        const TArray<FVector>& SurfacePoints,
         const FVector& Normal,
-        double HalfThickness)
+        const TArray<FSurfaceRayTriangle>& MeshTriangles,
+        double FallbackDepth)
     {
-        FKConvexElem Convex;
-        Convex.VertexData.Reserve(Polygon.Num() * 2);
-        for (const FVector& Point : Polygon)
+        if (SurfacePoints.IsEmpty() || Normal.IsNearlyZero())
         {
-            Convex.VertexData.Add(Point + Normal * HalfThickness);
-            Convex.VertexData.Add(Point - Normal * HalfThickness);
+            return;
+        }
+
+        FVector SurfaceCenter = FVector::ZeroVector;
+        for (const FVector& Point : SurfacePoints)
+        {
+            SurfaceCenter += Point;
+        }
+        SurfaceCenter /= static_cast<double>(SurfacePoints.Num());
+
+        const FVector InwardDirection = -Normal.GetSafeNormal();
+        double CenterDepth = FallbackDepth;
+        const bool bHasCenterDepth = FindOppositeSurfaceDepth(
+            MeshTriangles,
+            SurfaceCenter,
+            InwardDirection,
+            CenterDepth);
+
+        FKConvexElem Convex;
+        Convex.VertexData.Reserve(SurfacePoints.Num() * 2);
+        for (const FVector& Point : SurfacePoints)
+        {
+            const FVector SamplePoint =
+                FMath::Lerp(Point, SurfaceCenter, 0.02);
+            double PointDepth = FallbackDepth;
+            if (!FindOppositeSurfaceDepth(
+                    MeshTriangles,
+                    SamplePoint,
+                    InwardDirection,
+                    PointDepth)
+                && bHasCenterDepth)
+            {
+                PointDepth = CenterDepth;
+            }
+
+            Convex.VertexData.Add(Point);
+            Convex.VertexData.Add(
+                Point + InwardDirection * PointDepth);
         }
         Convex.UpdateElemBox();
         BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Convex));
@@ -629,26 +806,53 @@ namespace SmartCollision
     static int32 AddSurfacePatch(
         UBodySetup* BodySetup,
         const FSmartCollisionSelectionGroup& Group,
-        float Thickness,
-        int32 ShapeBudget)
+        float FallbackThickness,
+        int32 ShapeBudget,
+        const TArray<FSurfaceRayTriangle>& MeshTriangles,
+        int32 MaxConvexVertices,
+        bool bForceSingleHull)
     {
         if (ShapeBudget <= 0)
         {
             return 0;
         }
 
-        const double HalfThickness =
-            FMath::Max(0.05, static_cast<double>(Thickness) * 0.5);
+        const double FallbackDepth =
+            FMath::Max(0.1, static_cast<double>(FallbackThickness));
 
         TArray<FVector> ConvexHull;
         FVector SurfaceNormal;
         if (BuildSurfaceHull(Group, ConvexHull, SurfaceNormal))
         {
-            AddThinConvexFromPolygon(
+            ConvexHull = ReduceConvexPoints(
+                ConvexHull,
+                FMath::Clamp(MaxConvexVertices / 2, 4, 128));
+            AddThroughConvexFromPoints(
                 BodySetup,
                 ConvexHull,
                 SurfaceNormal,
-                HalfThickness);
+                MeshTriangles,
+                FallbackDepth);
+            return 1;
+        }
+
+        if (bForceSingleHull)
+        {
+            SurfaceNormal = ComputeSurfaceNormal(Group);
+            if (SurfaceNormal.IsNearlyZero())
+            {
+                return 0;
+            }
+
+            const TArray<FVector> ReducedPoints = ReduceConvexPoints(
+                Group.Points,
+                FMath::Clamp(MaxConvexVertices / 2, 4, 128));
+            AddThroughConvexFromPoints(
+                BodySetup,
+                ReducedPoints,
+                SurfaceNormal,
+                MeshTriangles,
+                FallbackDepth);
             return 1;
         }
 
@@ -677,11 +881,12 @@ namespace SmartCollision
             Triangle.Add(A);
             Triangle.Add(B);
             Triangle.Add(C);
-            AddThinConvexFromPolygon(
+            AddThroughConvexFromPoints(
                 BodySetup,
                 Triangle,
                 Normal,
-                HalfThickness);
+                MeshTriangles,
+                FallbackDepth);
             ++Added;
         }
 
@@ -1129,6 +1334,8 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
 
     int32 AddedShapes = 0;
     Result.NumComponents = SelectionGroups.Num();
+    TArray<FSurfaceRayTriangle> SurfaceRayTriangles;
+    bool bSurfaceRayTrianglesBuilt = false;
 
     for (const FSmartCollisionSelectionGroup& Group : GroupsToGenerate)
     {
@@ -1159,37 +1366,32 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
 
         if (EffectiveMode == ESmartCollisionMode::SurfacePatch)
         {
-            if (Settings.bMergeSelection)
+            if (!bSurfaceRayTrianglesBuilt)
             {
-                FPart SurfacePart;
-                SurfacePart.Points = Group.Points;
-                ComputePrincipalAxes(SurfacePart);
-                AddConvex(
-                    BodySetup,
-                    MakeConvexPartWithThickness(
-                        SurfacePart,
-                        Settings.Padding),
-                    0.0f,
-                    FMath::Clamp(
-                        Settings.MaxConvexVertices,
-                        8,
-                        256));
-                ++AddedShapes;
-                ++Result.NumConvex;
+                BuildSurfaceRayTriangles(
+                    StaticMesh,
+                    SurfaceRayTriangles);
+                bSurfaceRayTrianglesBuilt = true;
             }
-            else
+
+            const int32 AddedSurfaceShapes = AddSurfacePatch(
+                BodySetup,
+                Group,
+                Settings.Padding,
+                Settings.bMergeSelection
+                    ? 1
+                    : Settings.MaxShapes - AddedShapes,
+                SurfaceRayTriangles,
+                FMath::Clamp(
+                    Settings.MaxConvexVertices,
+                    8,
+                    256),
+                Settings.bMergeSelection);
+            AddedShapes += AddedSurfaceShapes;
+            Result.NumConvex += AddedSurfaceShapes;
+            if (AddedSurfaceShapes == 0)
             {
-                const int32 AddedSurfaceShapes = AddSurfacePatch(
-                    BodySetup,
-                    Group,
-                    Settings.Padding,
-                    Settings.MaxShapes - AddedShapes);
-                AddedShapes += AddedSurfaceShapes;
-                Result.NumConvex += AddedSurfaceShapes;
-                if (AddedSurfaceShapes == 0)
-                {
-                    ++Result.NumSkipped;
-                }
+                ++Result.NumSkipped;
             }
             continue;
         }

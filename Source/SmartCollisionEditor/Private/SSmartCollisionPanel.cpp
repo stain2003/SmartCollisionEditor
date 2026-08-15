@@ -1,3 +1,4 @@
+// Builds the Smart Collision panel and routes viewport selections to collision generation.
 #include "SSmartCollisionPanel.h"
 
 #include "EditorModeManager.h"
@@ -49,7 +50,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     .Text(LOCTEXT(
                         "Instructions",
                         "1. Start picking. 2. Click to add/remove parts or surfaces; Alt+Click replaces. "
-                        "3. Auto creates a thin surface collision for face selections."))
+                        "3. Auto extends face selections inward to the opposite mesh surface."))
                     .AutoWrapText(true)
                 ]
 
@@ -139,7 +140,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
 
                 + SVerticalBox::Slot().AutoHeight()
                 [
-                    SNew(STextBlock).Text(LOCTEXT("PaddingLabel", "Collision padding / face thickness (cm)"))
+                    SNew(STextBlock).Text(LOCTEXT("PaddingLabel", "Collision padding / fallback surface depth (cm)"))
                 ]
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 6)
                 [
@@ -288,7 +289,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                         "Auto fit selected geometry"))
                     .ToolTipText(LOCTEXT(
                         "AutoTip",
-                        "Connected parts are fitted separately. Face selections become thin surface collision."))
+                        "Connected parts are fitted separately. Face selections extend inward to the opposite mesh surface."))
                     .OnClicked(this, &SSmartCollisionPanel::GenerateAutomatic)
                 ]
 
@@ -297,10 +298,10 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                     SNew(SButton)
                     .Text(LOCTEXT(
                         "SurfacePatch",
-                        "Thin surface collision"))
+                        "Through surface collision"))
                     .ToolTipText(LOCTEXT(
                         "SurfacePatchTip",
-                        "Builds thin convex patches that follow each selected face region."))
+                        "Keeps one side on the selected face and extends inward until the opposite mesh surface."))
                     .OnClicked(
                         this,
                         &SSmartCollisionPanel::GenerateSurfacePatch)
@@ -625,7 +626,7 @@ void SSmartCollisionPanel::Generate(ESmartCollisionMode Mode)
     if (Mode == ESmartCollisionMode::SurfacePatch
         && SelectionMode != ESmartCollisionSelectionMode::Face)
     {
-        SetStatus(TEXT("Switch to Surface / face mode before creating thin surface collision."));
+        SetStatus(TEXT("Switch to Surface / face mode before creating through surface collision."));
         return;
     }
 
