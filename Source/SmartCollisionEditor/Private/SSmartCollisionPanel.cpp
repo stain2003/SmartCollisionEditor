@@ -1017,11 +1017,18 @@ void SSmartCollisionPanel::SetSelectedCollisionTransformComponent(
 
     Editor->RefreshTool();
     Editor->RefreshViewport();
-    SetStatus(FString::Printf(
-        bScale
-            ? TEXT("Updated scale for %d selected convex collision(s).")
-            : TEXT("Updated position for %d selected convex collision(s)."),
-        SelectedConvexPrims.Num()));
+    if (bScale)
+    {
+        SetStatus(FString::Printf(
+            TEXT("Updated scale for %d selected convex collision(s)."),
+            SelectedConvexPrims.Num()));
+    }
+    else
+    {
+        SetStatus(FString::Printf(
+            TEXT("Updated position for %d selected convex collision(s)."),
+            SelectedConvexPrims.Num()));
+    }
 }
 
 FReply SSmartCollisionPanel::SetSelectedCollisionOrigin(
