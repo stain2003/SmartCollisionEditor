@@ -1,3 +1,4 @@
+// Handles precise front-face ray picking, selection grouping, and viewport visualization.
 #include "SmartCollisionSelectionTool.h"
 
 #include "SmartCollisionGenerator.h"
@@ -270,7 +271,9 @@ int32 USmartCollisionSelectionTool::FindHitTriangle(
         const double Determinant =
             FVector::DotProduct(EdgeAB, DirectionCrossEdgeAC);
 
-        if (FMath::Abs(Determinant) <= IntersectionTolerance)
+        // Back-facing hits are not visible from the ray side. Skip them
+        // and keep searching for the nearest front-facing surface.
+        if (Determinant <= IntersectionTolerance)
         {
             continue;
         }
