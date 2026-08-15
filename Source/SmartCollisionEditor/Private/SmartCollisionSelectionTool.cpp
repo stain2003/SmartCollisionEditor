@@ -255,39 +255,61 @@ int32 USmartCollisionSelectionTool::FindHitTriangle(
         ComponentTransform.InverseTransformPosition(ClickPos.WorldRay.Origin);
     const FVector LocalDirection =
         ComponentTransform.InverseTransformVectorNoScale(ClickPos.WorldRay.Direction).GetSafeNormal();
-    const FVector LocalEnd = LocalOrigin + LocalDirection * HALF_WORLD_MAX;
 
     int32 ClosestTriangle = INDEX_NONE;
-    double ClosestDistanceSquared = DBL_MAX;
+    double ClosestDistance = DBL_MAX;
+    constexpr double IntersectionTolerance = SMALL_NUMBER;
 
     for (int32 TriangleIndex = 0; TriangleIndex < Triangles.Num(); ++TriangleIndex)
     {
         const FTriangle& Triangle = Triangles[TriangleIndex];
-        FVector Intersection;
-        FVector Normal;
-        if (FMath::SegmentTriangleIntersection(
-            LocalOrigin,
-            LocalEnd,
-            Triangle.Vertices[0],
-            Triangle.Vertices[1],
-            Triangle.Vertices[2],
-            Intersection,
-            Normal))
+        const FVector EdgeAB = Triangle.Vertices[1] - Triangle.Vertices[0];
+        const FVector EdgeAC = Triangle.Vertices[2] - Triangle.Vertices[0];
+        const FVector DirectionCrossEdgeAC =
+            FVector::CrossProduct(LocalDirection, EdgeAC);
+        const double Determinant =
+            FVector::DotProduct(EdgeAB, DirectionCrossEdgeAC);
+
+        if (FMath::Abs(Determinant) <= IntersectionTolerance)
         {
-            const double DistanceSquared = FVector::DistSquared(LocalOrigin, Intersection);
-            if (DistanceSquared < ClosestDistanceSquared)
-            {
-                ClosestDistanceSquared = DistanceSquared;
-                ClosestTriangle = TriangleIndex;
-            }
+            continue;
+        }
+
+        const double InverseDeterminant = 1.0 / Determinant;
+        const FVector OriginFromA = LocalOrigin - Triangle.Vertices[0];
+        const double BarycentricB =
+            FVector::DotProduct(OriginFromA, DirectionCrossEdgeAC)
+            * InverseDeterminant;
+        if (BarycentricB < -IntersectionTolerance
+            || BarycentricB > 1.0 + IntersectionTolerance)
+        {
+            continue;
+        }
+
+        const FVector OriginCrossEdgeAB =
+            FVector::CrossProduct(OriginFromA, EdgeAB);
+        const double BarycentricC =
+            FVector::DotProduct(LocalDirection, OriginCrossEdgeAB)
+            * InverseDeterminant;
+        if (BarycentricC < -IntersectionTolerance
+            || BarycentricB + BarycentricC > 1.0 + IntersectionTolerance)
+        {
+            continue;
+        }
+
+        const double Distance =
+            FVector::DotProduct(EdgeAC, OriginCrossEdgeAB)
+            * InverseDeterminant;
+        if (Distance > IntersectionTolerance && Distance < ClosestDistance)
+        {
+            ClosestDistance = Distance;
+            ClosestTriangle = TriangleIndex;
         }
     }
 
     if (OutDistance)
     {
-        *OutDistance = ClosestTriangle == INDEX_NONE
-            ? DBL_MAX
-            : FMath::Sqrt(ClosestDistanceSquared);
+        *OutDistance = ClosestDistance;
     }
     return ClosestTriangle;
 }
