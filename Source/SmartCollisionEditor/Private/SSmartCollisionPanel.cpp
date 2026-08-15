@@ -346,7 +346,7 @@ void SSmartCollisionPanel::Construct(const FArguments& InArgs)
                         "Smart multi-convex (irregular shapes)"))
                     .ToolTipText(LOCTEXT(
                         "MultiConvexTip",
-                        "Uses UE VHACD to split irregular selected geometry into a small set of tight convex collision hulls. Surface selections fall back to thin collision."))
+                        "Uses UE VHACD to split selected triangle geometry into a small set of tight convex collision hulls, including merged surface selections."))
                     .OnClicked(
                         this,
                         &SSmartCollisionPanel::GenerateMultiConvex)

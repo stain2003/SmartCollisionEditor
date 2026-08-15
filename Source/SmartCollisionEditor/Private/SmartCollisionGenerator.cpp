@@ -1385,12 +1385,6 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
                 : ESmartCollisionMode::Automatic;
         }
 
-        if (EffectiveMode == ESmartCollisionMode::MultiConvex
-            && Group.bSurfacePatch)
-        {
-            EffectiveMode = ESmartCollisionMode::SurfacePatch;
-        }
-
         if (EffectiveMode == ESmartCollisionMode::SurfacePatch)
         {
             if (!bSurfaceRayTrianglesBuilt)
