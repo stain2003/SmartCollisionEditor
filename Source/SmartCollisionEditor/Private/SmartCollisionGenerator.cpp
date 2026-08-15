@@ -779,6 +779,7 @@ namespace SmartCollision
             CenterDepth);
 
         FKConvexElem Convex;
+        FVector BottomCenter = FVector::ZeroVector;
         Convex.VertexData.Reserve(SurfacePoints.Num() * 2);
         for (const FVector& Point : SurfacePoints)
         {
@@ -795,10 +796,19 @@ namespace SmartCollision
                 PointDepth = CenterDepth;
             }
 
+            const FVector BackPoint =
+                Point + InwardDirection * PointDepth;
             Convex.VertexData.Add(Point);
-            Convex.VertexData.Add(
-                Point + InwardDirection * PointDepth);
+            Convex.VertexData.Add(BackPoint);
+            BottomCenter += BackPoint;
         }
+
+        BottomCenter /= static_cast<double>(SurfacePoints.Num());
+        for (FVector& Vertex : Convex.VertexData)
+        {
+            Vertex -= BottomCenter;
+        }
+        Convex.SetTransform(FTransform(BottomCenter));
         Convex.UpdateElemBox();
         BodySetup->AggGeom.ConvexElems.Add(MoveTemp(Convex));
     }
