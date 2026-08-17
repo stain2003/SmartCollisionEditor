@@ -26,6 +26,7 @@ public class SmartCollisionEditor : ModuleRules
             "ApplicationCore",
             "AssetRegistry",
             "ContentBrowser",
+            "GeometryCore",
             "InputCore",
             "InteractiveToolsFramework",
             "LevelEditor",

@@ -1,6 +1,7 @@
 // Generates primitive, convex, decomposed, and through-surface collision for static meshes.
 #include "SmartCollisionGenerator.h"
 
+#include "CompGeom/FitOrientedBox3.h"
 #include "ConvexDecompTool.h"
 #include "Engine/StaticMesh.h"
 #include "MeshDescription.h"
@@ -250,13 +251,122 @@ namespace SmartCollision
             * FMath::Max(0.1, Part.Extents.Z * 2.0 + Padding * 2.0);
     }
 
-    static FPart ChooseTighterBoxPart(const FPart& PrincipalPart, float Padding)
+    static bool TryMakeFittedBoxPart(
+        const TArray<FVector>& Points,
+        UE::Geometry::EBox3FitCriteria FitCriteria,
+        FPart& OutPart)
     {
-        const FPart AxisAligned = MakeAxisAlignedPart(PrincipalPart.Points);
-        return PaddedBoxVolume(AxisAligned, Padding)
-                < PaddedBoxVolume(PrincipalPart, Padding)
-            ? AxisAligned
-            : PrincipalPart;
+        if (Points.Num() < 3)
+        {
+            return false;
+        }
+
+        const UE::Geometry::FOrientedBox3d FittedBox =
+            UE::Geometry::FitOrientedBox3Points<double>(
+                MakeArrayView(Points),
+                FitCriteria);
+
+        FVector AxisX = FVector(FittedBox.AxisX()).GetSafeNormal();
+        FVector AxisY = FVector(FittedBox.AxisY());
+        AxisY = (AxisY - AxisX * FVector::DotProduct(AxisX, AxisY))
+            .GetSafeNormal();
+        const FVector AxisZ =
+            FVector::CrossProduct(AxisX, AxisY).GetSafeNormal();
+
+        if (AxisX.IsNearlyZero()
+            || AxisY.IsNearlyZero()
+            || AxisZ.IsNearlyZero()
+            || AxisX.ContainsNaN()
+            || AxisY.ContainsNaN()
+            || AxisZ.ContainsNaN())
+        {
+            return false;
+        }
+
+        OutPart = FPart();
+        OutPart.Points = Points;
+        for (const FVector& Point : Points)
+        {
+            OutPart.Centroid += Point;
+        }
+        OutPart.Centroid /= static_cast<double>(Points.Num());
+        OutPart.Axis[0] = AxisX;
+        OutPart.Axis[1] = AxisY;
+        OutPart.Axis[2] = AxisZ;
+        OutPart.MinProjection = FVector(DBL_MAX, DBL_MAX, DBL_MAX);
+        OutPart.MaxProjection = FVector(-DBL_MAX, -DBL_MAX, -DBL_MAX);
+
+        for (const FVector& Point : Points)
+        {
+            const FVector D = Point - OutPart.Centroid;
+            for (int32 AxisIndex = 0; AxisIndex < 3; ++AxisIndex)
+            {
+                const double Projection =
+                    FVector::DotProduct(D, OutPart.Axis[AxisIndex]);
+                OutPart.MinProjection[AxisIndex] = FMath::Min(
+                    OutPart.MinProjection[AxisIndex],
+                    Projection);
+                OutPart.MaxProjection[AxisIndex] = FMath::Max(
+                    OutPart.MaxProjection[AxisIndex],
+                    Projection);
+            }
+        }
+
+        OutPart.Extents =
+            (OutPart.MaxProjection - OutPart.MinProjection) * 0.5;
+        const FVector LocalCenter =
+            (OutPart.MaxProjection + OutPart.MinProjection) * 0.5;
+        OutPart.Center = OutPart.Centroid
+            + OutPart.Axis[0] * LocalCenter.X
+            + OutPart.Axis[1] * LocalCenter.Y
+            + OutPart.Axis[2] * LocalCenter.Z;
+
+        return !OutPart.Center.ContainsNaN()
+            && !OutPart.Extents.ContainsNaN();
+    }
+
+    static FPart ChooseTighterBoxPart(
+        const FPart& PrincipalPart,
+        float Padding)
+    {
+        FPart BestPart = PrincipalPart;
+        double BestVolume = PaddedBoxVolume(BestPart, Padding);
+
+        const FPart AxisAligned =
+            MakeAxisAlignedPart(PrincipalPart.Points);
+        const double AxisAlignedVolume =
+            PaddedBoxVolume(AxisAligned, Padding);
+        if (AxisAlignedVolume < BestVolume)
+        {
+            BestPart = AxisAligned;
+            BestVolume = AxisAlignedVolume;
+        }
+
+        const UE::Geometry::EBox3FitCriteria FitCriteria[] =
+        {
+            UE::Geometry::EBox3FitCriteria::Volume,
+            UE::Geometry::EBox3FitCriteria::SurfaceArea
+        };
+
+        for (const UE::Geometry::EBox3FitCriteria Criteria : FitCriteria)
+        {
+            FPart FittedPart;
+            if (TryMakeFittedBoxPart(
+                    PrincipalPart.Points,
+                    Criteria,
+                    FittedPart))
+            {
+                const double FittedVolume =
+                    PaddedBoxVolume(FittedPart, Padding);
+                if (FittedVolume < BestVolume)
+                {
+                    BestPart = MoveTemp(FittedPart);
+                    BestVolume = FittedVolume;
+                }
+            }
+        }
+
+        return BestPart;
     }
 
     static bool BuildParts(UStaticMesh* StaticMesh, TArray<FPart>& OutParts, FString& OutError)
