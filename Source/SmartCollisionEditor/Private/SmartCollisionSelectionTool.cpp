@@ -271,9 +271,9 @@ int32 USmartCollisionSelectionTool::FindHitTriangle(
         const double Determinant =
             FVector::DotProduct(EdgeAB, DirectionCrossEdgeAC);
 
-        // Back-facing hits are not visible from the ray side. Skip them
-        // and keep searching for the nearest front-facing surface.
-        if (Determinant <= IntersectionTolerance)
+        // UE static-mesh index winding produces a negative determinant
+        // for the rendered front side. Skip the opposite side and continue.
+        if (Determinant >= -IntersectionTolerance)
         {
             continue;
         }
