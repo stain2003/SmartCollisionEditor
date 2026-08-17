@@ -244,11 +244,51 @@ namespace SmartCollision
         return Part;
     }
 
-    static double PaddedBoxVolume(const FPart& Part, float Padding)
+    static FVector PaddedBoxDimensions(
+        const FPart& Part,
+        float Padding)
     {
-        return FMath::Max(0.1, Part.Extents.X * 2.0 + Padding * 2.0)
-            * FMath::Max(0.1, Part.Extents.Y * 2.0 + Padding * 2.0)
-            * FMath::Max(0.1, Part.Extents.Z * 2.0 + Padding * 2.0);
+        return FVector(
+            FMath::Max(
+                0.1,
+                Part.Extents.X * 2.0 + Padding * 2.0),
+            FMath::Max(
+                0.1,
+                Part.Extents.Y * 2.0 + Padding * 2.0),
+            FMath::Max(
+                0.1,
+                Part.Extents.Z * 2.0 + Padding * 2.0));
+    }
+
+    static double PaddedBoxVolume(
+        const FPart& Part,
+        float Padding)
+    {
+        const FVector Dimensions =
+            PaddedBoxDimensions(Part, Padding);
+        return Dimensions.X * Dimensions.Y * Dimensions.Z;
+    }
+
+    static double PaddedBoxSurfaceArea(
+        const FPart& Part,
+        float Padding)
+    {
+        const FVector Dimensions =
+            PaddedBoxDimensions(Part, Padding);
+        return 2.0 * (
+            Dimensions.X * Dimensions.Y
+            + Dimensions.X * Dimensions.Z
+            + Dimensions.Y * Dimensions.Z);
+    }
+
+    static double PaddedBoxTightness(
+        const FPart& Part,
+        float Padding,
+        bool bPreferSurfaceArea)
+    {
+        return bPreferSurfaceArea
+            ? PaddedBoxSurfaceArea(Part, Padding)
+            : PaddedBoxVolume(Part, Padding);
     }
 
     static bool TryMakeFittedBoxPart(
@@ -327,19 +367,26 @@ namespace SmartCollision
 
     static FPart ChooseTighterBoxPart(
         const FPart& PrincipalPart,
-        float Padding)
+        float Padding,
+        bool bPreferSurfaceArea)
     {
         FPart BestPart = PrincipalPart;
-        double BestVolume = PaddedBoxVolume(BestPart, Padding);
+        double BestTightness = PaddedBoxTightness(
+            BestPart,
+            Padding,
+            bPreferSurfaceArea);
 
         const FPart AxisAligned =
             MakeAxisAlignedPart(PrincipalPart.Points);
-        const double AxisAlignedVolume =
-            PaddedBoxVolume(AxisAligned, Padding);
-        if (AxisAlignedVolume < BestVolume)
+        const double AxisAlignedTightness =
+            PaddedBoxTightness(
+                AxisAligned,
+                Padding,
+                bPreferSurfaceArea);
+        if (AxisAlignedTightness < BestTightness)
         {
             BestPart = AxisAligned;
-            BestVolume = AxisAlignedVolume;
+            BestTightness = AxisAlignedTightness;
         }
 
         const UE::Geometry::EBox3FitCriteria FitCriteria[] =
@@ -356,12 +403,15 @@ namespace SmartCollision
                     Criteria,
                     FittedPart))
             {
-                const double FittedVolume =
-                    PaddedBoxVolume(FittedPart, Padding);
-                if (FittedVolume < BestVolume)
+                const double FittedTightness =
+                    PaddedBoxTightness(
+                        FittedPart,
+                        Padding,
+                        bPreferSurfaceArea);
+                if (FittedTightness < BestTightness)
                 {
                     BestPart = MoveTemp(FittedPart);
-                    BestVolume = FittedVolume;
+                    BestTightness = FittedTightness;
                 }
             }
         }
@@ -443,9 +493,13 @@ namespace SmartCollision
     static void AddOrientedBox(
         UBodySetup* BodySetup,
         const FPart& Part,
-        float Padding)
+        float Padding,
+        bool bPreferSurfaceArea)
     {
-        const FPart BoxPart = ChooseTighterBoxPart(Part, Padding);
+        const FPart BoxPart = ChooseTighterBoxPart(
+            Part,
+            Padding,
+            bPreferSurfaceArea);
 
         FKBoxElem Box;
         Box.Center = BoxPart.Center;
@@ -1355,7 +1409,11 @@ FSmartCollisionResult FSmartCollisionGenerator::Generate(
         case ESmartCollisionMode::Automatic:
         case ESmartCollisionMode::OrientedBox:
         default:
-            AddOrientedBox(BodySetup, Part, Settings.Padding);
+            AddOrientedBox(
+                BodySetup,
+                Part,
+                Settings.Padding,
+                false);
             ++Result.NumBoxes;
             break;
         }
@@ -1596,7 +1654,11 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
         case ESmartCollisionMode::SurfacePatch:
         case ESmartCollisionMode::OrientedBox:
         default:
-            AddOrientedBox(BodySetup, Part, Settings.Padding);
+            AddOrientedBox(
+                BodySetup,
+                Part,
+                Settings.Padding,
+                Settings.bMergeSelection);
             ++Result.NumBoxes;
             break;
         }
