@@ -197,7 +197,8 @@ void USmartCollisionSelectionTool::BuildTriangleCache()
     }
 
     FTriangleDisjointSet ComponentSets(TriangleCount);
-    FTriangleDisjointSet SurfaceSets(TriangleCount);
+    TArray<TArray<int32>> SharedEdgeNeighbors;
+    SharedEdgeNeighbors.SetNum(TriangleCount);
     TMap<FEdgeKey, int32> FirstTriangleAtEdge;
     constexpr double CoplanarNormalDot = 0.996194698; // five degrees
 
@@ -217,13 +218,8 @@ void USmartCollisionSelectionTool::BuildTriangleCache()
             if (const int32* Existing = FirstTriangleAtEdge.Find(Edge))
             {
                 ComponentSets.Union(TriangleIndex, *Existing);
-                const double NormalDot = FVector::DotProduct(
-                    Triangle.Normal,
-                    Triangles[*Existing].Normal);
-                if (NormalDot >= CoplanarNormalDot)
-                {
-                    SurfaceSets.Union(TriangleIndex, *Existing);
-                }
+                SharedEdgeNeighbors[TriangleIndex].Add(*Existing);
+                SharedEdgeNeighbors[*Existing].Add(TriangleIndex);
             }
             else
             {
@@ -235,7 +231,58 @@ void USmartCollisionSelectionTool::BuildTriangleCache()
     for (int32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
     {
         Triangles[TriangleIndex].Component = ComponentSets.Find(TriangleIndex);
-        Triangles[TriangleIndex].Surface = SurfaceSets.Find(TriangleIndex);
+    }
+
+    constexpr double CoplanarDistanceTolerance = 0.1; // 0.1 cm
+    for (int32 SeedIndex = 0; SeedIndex < TriangleCount; ++SeedIndex)
+    {
+        if (Triangles[SeedIndex].Surface != INDEX_NONE)
+        {
+            continue;
+        }
+
+        const FVector SeedNormal = Triangles[SeedIndex].Normal;
+        const double SeedPlane = FVector::DotProduct(
+            SeedNormal,
+            Triangles[SeedIndex].Vertices[0]);
+        TArray<int32> PendingTriangles;
+        PendingTriangles.Add(SeedIndex);
+
+        while (!PendingTriangles.IsEmpty())
+        {
+            const int32 TriangleIndex = PendingTriangles.Pop(EAllowShrinking::No);
+            FTriangle& Triangle = Triangles[TriangleIndex];
+            if (Triangle.Surface != INDEX_NONE)
+            {
+                continue;
+            }
+
+            if (FVector::DotProduct(SeedNormal, Triangle.Normal)
+                < CoplanarNormalDot)
+            {
+                continue;
+            }
+
+            bool bOnSeedPlane = true;
+            for (const FVector& Vertex : Triangle.Vertices)
+            {
+                const double PlaneDistance = FMath::Abs(
+                    FVector::DotProduct(SeedNormal, Vertex)
+                    - SeedPlane);
+                if (PlaneDistance > CoplanarDistanceTolerance)
+                {
+                    bOnSeedPlane = false;
+                    break;
+                }
+            }
+            if (!bOnSeedPlane)
+            {
+                continue;
+            }
+
+            Triangle.Surface = SeedIndex;
+            PendingTriangles.Append(SharedEdgeNeighbors[TriangleIndex]);
+        }
     }
 
     NotifySelectionChanged();
