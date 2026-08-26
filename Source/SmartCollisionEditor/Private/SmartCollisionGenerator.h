@@ -7,7 +7,7 @@ class UStaticMesh;
 enum class ESmartCollisionMode : uint8
 {
     Automatic,
-    OrientedBox,
+    Box,
     Capsule,
     Sphere,
     Convex,

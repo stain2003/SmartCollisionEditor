@@ -1,8 +1,11 @@
 #include "SmartCollisionEditorModule.h"
 
+#include "Containers/Ticker.h"
 #include "Framework/Docking/TabManager.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "Engine/StaticMesh.h"
 #include "IStaticMeshEditor.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "SSmartCollisionPanel.h"
 #include "StaticMeshEditorModule.h"
 #include "Styling/AppStyle.h"
@@ -27,6 +30,42 @@ namespace
                 TabManager->TryInvokeTab(SmartCollisionTabName);
             }
         }
+    }
+
+    void RestoreSimpleCollisionVisibility(
+        const TSharedPtr<IStaticMeshEditor>& Editor)
+    {
+        UStaticMesh* StaticMesh = Editor ? Editor->GetStaticMesh() : nullptr;
+        const UBodySetup* BodySetup =
+            StaticMesh ? StaticMesh->GetBodySetup() : nullptr;
+        if (!BodySetup
+            || BodySetup->AggGeom.GetElementCount() == 0
+            || Editor->IsShowSimpleCollisionChecked())
+        {
+            return;
+        }
+
+        // A newly restored Static Mesh Editor can hide valid simple collision.
+        // Only change the draw state here. RefreshTool is unsafe while the
+        // editor is still constructing its primitive-selection arrays.
+        Editor->ToggleShowSimpleCollision();
+        Editor->RefreshViewport();
+    }
+
+    void QueueSimpleCollisionVisibilityRestore(
+        TWeakPtr<IStaticMeshEditor> WeakEditor)
+    {
+        FTSTicker::GetCoreTicker().AddTicker(
+            FTickerDelegate::CreateLambda(
+                [WeakEditor](float)
+                {
+                    if (const TSharedPtr<IStaticMeshEditor> Editor =
+                            WeakEditor.Pin())
+                    {
+                        RestoreSimpleCollisionVisibility(Editor);
+                    }
+                    return false;
+                }));
     }
 }
 
@@ -174,6 +213,8 @@ void FSmartCollisionEditorModule::HandleStaticMeshEditorOpened(
         {
             TabManager->UnregisterTabSpawner(SmartCollisionTabName);
         });
+
+    QueueSimpleCollisionVisibilityRestore(WeakEditor);
 }
 
 TSharedRef<FExtender> FSmartCollisionEditorModule::ExtendStaticMeshEditorToolbar(
