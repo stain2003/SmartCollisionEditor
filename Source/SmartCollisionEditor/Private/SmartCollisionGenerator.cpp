@@ -1,7 +1,6 @@
 // Generates primitive, convex, decomposed, and through-surface collision for static meshes.
 #include "SmartCollisionGenerator.h"
 
-#include "CompGeom/FitOrientedBox3.h"
 #include "ConvexDecompTool.h"
 #include "Engine/StaticMesh.h"
 #include "MeshDescription.h"
@@ -210,215 +209,6 @@ namespace SmartCollision
             + Part.Axis[2] * LocalCenter.Z;
     }
 
-    static FPart MakeAxisAlignedPart(const TArray<FVector>& Points)
-    {
-        FPart Part;
-        Part.Points = Points;
-        Part.Centroid = FVector::ZeroVector;
-        for (const FVector& Point : Points)
-        {
-            Part.Centroid += Point;
-        }
-        Part.Centroid /= static_cast<double>(Points.Num());
-
-        Part.Axis[0] = FVector::ForwardVector;
-        Part.Axis[1] = FVector::RightVector;
-        Part.Axis[2] = FVector::UpVector;
-        Part.MinProjection = FVector(DBL_MAX, DBL_MAX, DBL_MAX);
-        Part.MaxProjection = FVector(-DBL_MAX, -DBL_MAX, -DBL_MAX);
-
-        for (const FVector& Point : Points)
-        {
-            const FVector D = Point - Part.Centroid;
-            Part.MinProjection.X = FMath::Min(Part.MinProjection.X, D.X);
-            Part.MinProjection.Y = FMath::Min(Part.MinProjection.Y, D.Y);
-            Part.MinProjection.Z = FMath::Min(Part.MinProjection.Z, D.Z);
-            Part.MaxProjection.X = FMath::Max(Part.MaxProjection.X, D.X);
-            Part.MaxProjection.Y = FMath::Max(Part.MaxProjection.Y, D.Y);
-            Part.MaxProjection.Z = FMath::Max(Part.MaxProjection.Z, D.Z);
-        }
-
-        Part.Extents = (Part.MaxProjection - Part.MinProjection) * 0.5;
-        Part.Center = Part.Centroid
-            + (Part.MaxProjection + Part.MinProjection) * 0.5;
-        return Part;
-    }
-
-    static FVector PaddedBoxDimensions(
-        const FPart& Part,
-        float Padding)
-    {
-        return FVector(
-            FMath::Max(
-                0.1,
-                Part.Extents.X * 2.0 + Padding * 2.0),
-            FMath::Max(
-                0.1,
-                Part.Extents.Y * 2.0 + Padding * 2.0),
-            FMath::Max(
-                0.1,
-                Part.Extents.Z * 2.0 + Padding * 2.0));
-    }
-
-    static double PaddedBoxVolume(
-        const FPart& Part,
-        float Padding)
-    {
-        const FVector Dimensions =
-            PaddedBoxDimensions(Part, Padding);
-        return Dimensions.X * Dimensions.Y * Dimensions.Z;
-    }
-
-    static double PaddedBoxSurfaceArea(
-        const FPart& Part,
-        float Padding)
-    {
-        const FVector Dimensions =
-            PaddedBoxDimensions(Part, Padding);
-        return 2.0 * (
-            Dimensions.X * Dimensions.Y
-            + Dimensions.X * Dimensions.Z
-            + Dimensions.Y * Dimensions.Z);
-    }
-
-    static double PaddedBoxTightness(
-        const FPart& Part,
-        float Padding,
-        bool bPreferSurfaceArea)
-    {
-        return bPreferSurfaceArea
-            ? PaddedBoxSurfaceArea(Part, Padding)
-            : PaddedBoxVolume(Part, Padding);
-    }
-
-    static bool TryMakeFittedBoxPart(
-        const TArray<FVector>& Points,
-        UE::Geometry::EBox3FitCriteria FitCriteria,
-        FPart& OutPart)
-    {
-        if (Points.Num() < 3)
-        {
-            return false;
-        }
-
-        const UE::Geometry::FOrientedBox3d FittedBox =
-            UE::Geometry::FitOrientedBox3Points<double>(
-                MakeArrayView(Points),
-                FitCriteria);
-
-        FVector AxisX = FVector(FittedBox.AxisX()).GetSafeNormal();
-        FVector AxisY = FVector(FittedBox.AxisY());
-        AxisY = (AxisY - AxisX * FVector::DotProduct(AxisX, AxisY))
-            .GetSafeNormal();
-        const FVector AxisZ =
-            FVector::CrossProduct(AxisX, AxisY).GetSafeNormal();
-
-        if (AxisX.IsNearlyZero()
-            || AxisY.IsNearlyZero()
-            || AxisZ.IsNearlyZero()
-            || AxisX.ContainsNaN()
-            || AxisY.ContainsNaN()
-            || AxisZ.ContainsNaN())
-        {
-            return false;
-        }
-
-        OutPart = FPart();
-        OutPart.Points = Points;
-        for (const FVector& Point : Points)
-        {
-            OutPart.Centroid += Point;
-        }
-        OutPart.Centroid /= static_cast<double>(Points.Num());
-        OutPart.Axis[0] = AxisX;
-        OutPart.Axis[1] = AxisY;
-        OutPart.Axis[2] = AxisZ;
-        OutPart.MinProjection = FVector(DBL_MAX, DBL_MAX, DBL_MAX);
-        OutPart.MaxProjection = FVector(-DBL_MAX, -DBL_MAX, -DBL_MAX);
-
-        for (const FVector& Point : Points)
-        {
-            const FVector D = Point - OutPart.Centroid;
-            for (int32 AxisIndex = 0; AxisIndex < 3; ++AxisIndex)
-            {
-                const double Projection =
-                    FVector::DotProduct(D, OutPart.Axis[AxisIndex]);
-                OutPart.MinProjection[AxisIndex] = FMath::Min(
-                    OutPart.MinProjection[AxisIndex],
-                    Projection);
-                OutPart.MaxProjection[AxisIndex] = FMath::Max(
-                    OutPart.MaxProjection[AxisIndex],
-                    Projection);
-            }
-        }
-
-        OutPart.Extents =
-            (OutPart.MaxProjection - OutPart.MinProjection) * 0.5;
-        const FVector LocalCenter =
-            (OutPart.MaxProjection + OutPart.MinProjection) * 0.5;
-        OutPart.Center = OutPart.Centroid
-            + OutPart.Axis[0] * LocalCenter.X
-            + OutPart.Axis[1] * LocalCenter.Y
-            + OutPart.Axis[2] * LocalCenter.Z;
-
-        return !OutPart.Center.ContainsNaN()
-            && !OutPart.Extents.ContainsNaN();
-    }
-
-    static FPart ChooseTighterBoxPart(
-        const FPart& PrincipalPart,
-        float Padding,
-        bool bPreferSurfaceArea)
-    {
-        FPart BestPart = PrincipalPart;
-        double BestTightness = PaddedBoxTightness(
-            BestPart,
-            Padding,
-            bPreferSurfaceArea);
-
-        const FPart AxisAligned =
-            MakeAxisAlignedPart(PrincipalPart.Points);
-        const double AxisAlignedTightness =
-            PaddedBoxTightness(
-                AxisAligned,
-                Padding,
-                bPreferSurfaceArea);
-        if (AxisAlignedTightness < BestTightness)
-        {
-            BestPart = AxisAligned;
-            BestTightness = AxisAlignedTightness;
-        }
-
-        const UE::Geometry::EBox3FitCriteria FitCriteria[] =
-        {
-            UE::Geometry::EBox3FitCriteria::Volume,
-            UE::Geometry::EBox3FitCriteria::SurfaceArea
-        };
-
-        for (const UE::Geometry::EBox3FitCriteria Criteria : FitCriteria)
-        {
-            FPart FittedPart;
-            if (TryMakeFittedBoxPart(
-                    PrincipalPart.Points,
-                    Criteria,
-                    FittedPart))
-            {
-                const double FittedTightness =
-                    PaddedBoxTightness(
-                        FittedPart,
-                        Padding,
-                        bPreferSurfaceArea);
-                if (FittedTightness < BestTightness)
-                {
-                    BestPart = MoveTemp(FittedPart);
-                    BestTightness = FittedTightness;
-                }
-            }
-        }
-
-        return BestPart;
-    }
-
     static bool BuildParts(UStaticMesh* StaticMesh, TArray<FPart>& OutParts, FString& OutError)
     {
         if (!StaticMesh)
@@ -490,33 +280,42 @@ namespace SmartCollision
         return true;
     }
 
-    static void AddOrientedBox(
+    static bool AddSelectionBox(
         UBodySetup* BodySetup,
-        const FPart& Part,
-        float Padding,
-        bool bPreferSurfaceArea)
+        const TArray<FVector>& Points,
+        float Padding)
     {
-        const FPart BoxPart = ChooseTighterBoxPart(
-            Part,
-            Padding,
-            bPreferSurfaceArea);
+        // Mirrors GenerateBoxAsSimpleCollision: compute a local-space FBox,
+        // then copy its center and full dimensions into an unrotated FKBoxElem.
+        FBox SelectionBounds(ForceInit);
+        for (const FVector& Point : Points)
+        {
+            if (!Point.ContainsNaN())
+            {
+                SelectionBounds += Point;
+            }
+        }
+        if (!SelectionBounds.IsValid)
+        {
+            return false;
+        }
+
+        const FVector Size = SelectionBounds.GetSize();
 
         FKBoxElem Box;
-        Box.Center = BoxPart.Center;
-        Box.Rotation =
-            FRotationMatrix::MakeFromXY(
-                BoxPart.Axis[0],
-                BoxPart.Axis[1]).Rotator();
+        Box.Center = SelectionBounds.GetCenter();
+        Box.Rotation = FRotator::ZeroRotator;
         Box.X = FMath::Max(
             0.1,
-            BoxPart.Extents.X * 2.0 + Padding * 2.0);
+            Size.X + Padding * 2.0);
         Box.Y = FMath::Max(
             0.1,
-            BoxPart.Extents.Y * 2.0 + Padding * 2.0);
+            Size.Y + Padding * 2.0);
         Box.Z = FMath::Max(
             0.1,
-            BoxPart.Extents.Z * 2.0 + Padding * 2.0);
+            Size.Z + Padding * 2.0);
         BodySetup->AggGeom.BoxElems.Add(Box);
+        return true;
     }
 
     static void AddCapsule(
@@ -1272,7 +1071,7 @@ namespace SmartCollision
         {
             return ESmartCollisionMode::Capsule;
         }
-        return ESmartCollisionMode::OrientedBox;
+        return ESmartCollisionMode::Box;
     }
 
     static FPart MakeConvexPartWithThickness(
@@ -1407,13 +1206,16 @@ FSmartCollisionResult FSmartCollisionGenerator::Generate(
             break;
 
         case ESmartCollisionMode::Automatic:
-        case ESmartCollisionMode::OrientedBox:
+        case ESmartCollisionMode::Box:
         default:
-            AddOrientedBox(
-                BodySetup,
-                Part,
-                Settings.Padding,
-                false);
+            if (!AddSelectionBox(
+                    BodySetup,
+                    Part.Points,
+                    Settings.Padding))
+            {
+                ++Result.NumSkipped;
+                continue;
+            }
             ++Result.NumBoxes;
             break;
         }
@@ -1652,13 +1454,16 @@ FSmartCollisionResult FSmartCollisionGenerator::GenerateFromGroups(
 
         case ESmartCollisionMode::Automatic:
         case ESmartCollisionMode::SurfacePatch:
-        case ESmartCollisionMode::OrientedBox:
+        case ESmartCollisionMode::Box:
         default:
-            AddOrientedBox(
-                BodySetup,
-                Part,
-                Settings.Padding,
-                Settings.bMergeSelection);
+            if (!AddSelectionBox(
+                    BodySetup,
+                    Part.Points,
+                    Settings.Padding))
+            {
+                ++Result.NumSkipped;
+                continue;
+            }
             ++Result.NumBoxes;
             break;
         }

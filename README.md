@@ -12,7 +12,7 @@ An Unreal Engine 5.8.1 editor plugin for interactively fitting simple collision 
 - **Stop viewport picking** pauses picking while preserving the selection for generation; restarting picking restores the cached highlight.
 - In **Surface / face** mode, **Auto** creates thin collision following the selected surface instead of a box.
 - Convex planar regions are merged into one thin convex shell; concave regions fall back to multiple thin triangle prisms to preserve holes and indentations.
-- Box fitting compares PCA orientation with the mesh axes and keeps the tighter result.
+- Box fitting mirrors Unreal's Add Box Simplified Collision path, using the selected vertices' local-space bounds.
 - Capsule, sphere, and convex fitting use tighter geometry-based bounds.
 
 ## V2 workflow
@@ -46,8 +46,8 @@ Use **Smart multi-convex (irregular shapes)** when one box, capsule, sphere, or 
 
 ## Collision fitting
 
-- **Auto** chooses a sphere for near-uniform bounds, a capsule for long round parts, and an oriented box otherwise.
-- **Box** uses a PCA-aligned oriented bounding box.
+- **Auto** chooses a sphere for near-uniform bounds, a capsule for long round parts, and a local-space bounds box otherwise.
+- **Box** creates the selected vertices' minimum local-space axis-aligned bounding box.
 - **Capsule** aligns its long axis to the selection's principal axis.
 - **Sphere** encloses all selected vertices.
 - **Convex hull** submits a reduced selected point cloud to Chaos cooking.

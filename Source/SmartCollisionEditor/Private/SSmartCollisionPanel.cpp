@@ -788,7 +788,7 @@ FReply SSmartCollisionPanel::GenerateAutomatic()
 
 FReply SSmartCollisionPanel::GenerateBox()
 {
-    Generate(ESmartCollisionMode::OrientedBox);
+    Generate(ESmartCollisionMode::Box);
     return FReply::Handled();
 }
 
